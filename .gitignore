@@ -1,0 +1,35 @@
+﻿# Windows
+*.exe
+*.dll
+*.pdb
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# OS
+.DS_Store
+*.log
+
+# Local environment
+.env
+.env.local
