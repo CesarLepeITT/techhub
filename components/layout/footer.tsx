@@ -51,7 +51,7 @@ export function Footer() {
                 Recibe ofertas exclusivas, tutoriales y novedades en componentes electrónicos.
               </p>
             </div>
-            <div className="flex w-full max-w-md gap-3">
+            <div className="flex w-full max-w-md flex-col gap-3 sm:flex-row">
               <input
                 type="email"
                 placeholder="tu@email.com"

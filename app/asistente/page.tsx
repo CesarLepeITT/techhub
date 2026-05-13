@@ -327,7 +327,7 @@ export default function AssistantPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
       
-      <main className="flex flex-1 flex-col pt-20 md:pt-24 pb-24 md:pb-8">
+      <main className="flex flex-1 flex-col pb-8 pt-20 md:pt-24">
         <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 sm:px-6">
           {messages.length === 0 ? (
             /* Empty State - Welcome Screen */

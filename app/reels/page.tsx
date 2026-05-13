@@ -480,17 +480,15 @@ export default function ReelsPage() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isMuted, setIsMuted] = useState(true)
   const containerRef = useRef<HTMLDivElement>(null)
+  const touchStartYRef = useRef<number | null>(null)
+  const wheelLockRef = useRef(false)
 
   const goToNext = () => {
-    if (currentIndex < reels.length - 1) {
-      setCurrentIndex(currentIndex + 1)
-    }
+    setCurrentIndex((prevIndex) => (prevIndex + 1) % reels.length)
   }
 
   const goToPrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
-    }
+    setCurrentIndex((prevIndex) => (prevIndex - 1 + reels.length) % reels.length)
   }
 
   useEffect(() => {
@@ -517,7 +515,47 @@ export default function ReelsPage() {
         <div className="lg:hidden">
           <div 
             ref={containerRef}
-            className="relative h-[calc(100vh-4rem)] w-full"
+            className="relative h-[calc(100dvh-3.5rem)] w-full overflow-hidden touch-pan-y"
+            onTouchStart={(event) => {
+              touchStartYRef.current = event.touches[0]?.clientY ?? null
+            }}
+            onTouchEnd={(event) => {
+              const startY = touchStartYRef.current
+              const endY = event.changedTouches[0]?.clientY
+              touchStartYRef.current = null
+
+              if (startY == null || endY == null) {
+                return
+              }
+
+              const deltaY = startY - endY
+              if (Math.abs(deltaY) < 50) {
+                return
+              }
+
+              if (deltaY > 0) {
+                goToNext()
+                return
+              }
+
+              goToPrevious()
+            }}
+            onWheel={(event) => {
+              if (wheelLockRef.current || Math.abs(event.deltaY) < 30) {
+                return
+              }
+
+              wheelLockRef.current = true
+              if (event.deltaY > 0) {
+                goToNext()
+              } else {
+                goToPrevious()
+              }
+
+              window.setTimeout(() => {
+                wheelLockRef.current = false
+              }, 350)
+            }}
           >
             <ReelCard 
               reel={currentReel} 
@@ -530,15 +568,13 @@ export default function ReelsPage() {
             <div className="absolute right-4 top-1/2 z-20 hidden -translate-y-1/2 flex-col gap-2 sm:flex">
               <button
                 onClick={goToPrevious}
-                disabled={currentIndex === 0}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/20 backdrop-blur-sm disabled:opacity-30"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/20 backdrop-blur-sm"
               >
                 <ChevronUp className="h-6 w-6 text-background" />
               </button>
               <button
                 onClick={goToNext}
-                disabled={currentIndex === reels.length - 1}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/20 backdrop-blur-sm disabled:opacity-30"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/20 backdrop-blur-sm"
               >
                 <ChevronDown className="h-6 w-6 text-background" />
               </button>
@@ -559,6 +595,10 @@ export default function ReelsPage() {
                 />
               ))}
             </div>
+
+            <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-foreground/20 px-3 py-1 text-xs font-medium text-background backdrop-blur-sm">
+              Desliza arriba o abajo
+            </div>
           </div>
         </div>
 
@@ -570,7 +610,7 @@ export default function ReelsPage() {
               {/* Phone bezel */}
               <div className="relative rounded-[3rem] bg-foreground/90 p-3 shadow-float">
                 {/* Screen */}
-                <div className="relative h-[680px] w-[340px] overflow-hidden rounded-[2.5rem] bg-foreground">
+                <div className="relative h-[680px] w-[min(340px,32vw)] overflow-hidden rounded-[2.5rem] bg-foreground">
                   <ReelCard 
                     reel={currentReel} 
                     isActive={true}
@@ -586,15 +626,13 @@ export default function ReelsPage() {
               <div className="absolute -right-16 top-1/2 flex -translate-y-1/2 flex-col gap-3">
                 <button
                   onClick={goToPrevious}
-                  disabled={currentIndex === 0}
-                  className="flex h-12 w-12 items-center justify-center rounded-full bg-card shadow-soft transition-lift disabled:opacity-30"
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-card shadow-soft transition-lift"
                 >
                   <ChevronUp className="h-6 w-6 text-foreground" />
                 </button>
                 <button
                   onClick={goToNext}
-                  disabled={currentIndex === reels.length - 1}
-                  className="flex h-12 w-12 items-center justify-center rounded-full bg-card shadow-soft transition-lift disabled:opacity-30"
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-card shadow-soft transition-lift"
                 >
                   <ChevronDown className="h-6 w-6 text-foreground" />
                 </button>
@@ -618,7 +656,7 @@ export default function ReelsPage() {
             </div>
 
             {/* Product Details Panel */}
-            <div className="h-[680px] w-96 overflow-hidden rounded-xl bg-card shadow-soft">
+            <div className="h-[680px] w-[min(24rem,32vw)] min-w-[20rem] overflow-hidden rounded-xl bg-card shadow-soft">
               <DesktopProductPanel reel={currentReel} />
             </div>
           </div>

@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { KeyboardEvent, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Menu, X, ShoppingCart, User, Search, Sparkles, LayoutGrid, Clapperboard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -14,7 +15,21 @@ const navigation = [
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
   const cartItemCount = 3
+  const router = useRouter()
+
+  const handleSearch = () => {
+    const query = searchQuery.trim()
+    setMobileMenuOpen(false)
+    router.push(query ? `/productos?buscar=${encodeURIComponent(query)}` : "/productos")
+  }
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      handleSearch()
+    }
+  }
 
   return (
     <>
@@ -47,9 +62,27 @@ export function Header() {
 
               {/* Actions */}
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer">
-                  <Search className="h-5 w-5" />
-                </Button>
+                <div className="hidden items-center gap-2 lg:flex">
+                  <div className="relative w-64 xl:w-72">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onKeyDown={handleSearchKeyDown}
+                      placeholder="Buscar productos..."
+                      className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                  <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer" onClick={handleSearch}>
+                    <Search className="h-5 w-5" />
+                  </Button>
+                </div>
+                <Link href="/productos" className="lg:hidden">
+                  <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer">
+                    <Search className="h-5 w-5" />
+                  </Button>
+                </Link>
                 <Link href="/carrito">
                   <Button variant="ghost" size="icon" className="relative rounded-lg cursor-pointer">
                     <ShoppingCart className="h-5 w-5" />
@@ -84,9 +117,11 @@ export function Header() {
             </Link>
 
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg cursor-pointer">
-                <Search className="h-5 w-5" />
-              </Button>
+              <Link href="/productos">
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg cursor-pointer">
+                  <Search className="h-5 w-5" />
+                </Button>
+              </Link>
               <Link href="/carrito">
                 <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-lg cursor-pointer">
                   <ShoppingCart className="h-5 w-5" />
@@ -117,6 +152,24 @@ export function Header() {
           )}
         >
           <nav className="flex flex-col gap-1 p-4">
+            <div className="mb-2 rounded-lg border border-border bg-background p-2">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder="Buscar productos..."
+                    className="w-full rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  />
+                </div>
+                <Button size="sm" className="rounded-lg" onClick={handleSearch}>
+                  Buscar
+                </Button>
+              </div>
+            </div>
             {navigation.map((item) => (
               <Link
                 key={item.name}
@@ -139,24 +192,6 @@ export function Header() {
           </nav>
         </div>
       </header>
-
-      {/* Mobile Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
-        <div className="navbar-solid border-t border-border shadow-float">
-          <div className="flex items-center justify-around py-2">
-            {navigation.map((item) => (
-              <Link
-                key={item.name}
-                href={item.href}
-                className="flex flex-col items-center gap-1 rounded-lg px-4 py-2 text-muted-foreground transition-colors hover:text-primary cursor-pointer"
-              >
-                <item.icon className="h-5 w-5" />
-                <span className="text-[10px] font-medium">{item.name}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </nav>
     </>
   )
 }

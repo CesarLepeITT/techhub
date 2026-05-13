@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Image from "next/image"
+import { useSearchParams } from "next/navigation"
 import { 
   Search, 
   SlidersHorizontal, 
@@ -316,7 +317,8 @@ function ProductGridCard({ product }: { product: typeof products[0] }) {
   )
 }
 
-export default function ProductsPage() {
+function ProductsPageContent() {
+  const searchParams = useSearchParams()
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [selectedSort, setSelectedSort] = useState("relevance")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
@@ -326,9 +328,24 @@ export default function ProductsPage() {
   const [priceRange, setPriceRange] = useState({ min: "", max: "" })
   const [showWholesaleOnly, setShowWholesaleOnly] = useState(false)
 
+  useEffect(() => {
+    setSearchQuery(searchParams.get("buscar") ?? "")
+    const categoryFromUrl = searchParams.get("categoria")
+    const matchingCategory = categories.find(
+      (category) => category.name.toLowerCase() === categoryFromUrl?.toLowerCase()
+    )
+    setSelectedCategory(matchingCategory?.id ?? "all")
+  }, [searchParams])
+
   const filteredProducts = products.filter((p) => {
     if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false
+    }
+    if (selectedCategory !== "all") {
+      const activeCategory = categories.find((category) => category.id === selectedCategory)?.name
+      if (activeCategory && p.category !== activeCategory) {
+        return false
+      }
     }
     if (showWholesaleOnly && !p.wholesalePrice) {
       return false
@@ -340,13 +357,26 @@ export default function ProductsPage() {
       return false
     }
     return true
+  }).sort((a, b) => {
+    switch (selectedSort) {
+      case "price-asc":
+        return a.retailPrice - b.retailPrice
+      case "price-desc":
+        return b.retailPrice - a.retailPrice
+      case "rating":
+        return b.rating - a.rating
+      case "newest":
+        return Number(b.id) - Number(a.id)
+      default:
+        return 0
+    }
   })
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="pt-20 md:pt-24 pb-24 md:pb-8">
+      <main className="pb-8 pt-20 md:pt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Page Header */}
           <div className="mb-8">
@@ -584,5 +614,13 @@ export default function ProductsPage() {
 
       <Footer />
     </div>
+  )
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <ProductsPageContent />
+    </Suspense>
   )
 }

@@ -328,7 +328,7 @@ export default function CartPage() {
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="pb-24 pt-20 md:pb-8 md:pt-24">
+      <main className="pb-8 pt-20 md:pt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-8 flex items-center justify-between">

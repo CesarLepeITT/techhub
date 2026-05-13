@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Search, Sparkles, ArrowRight, Truck, TrendingUp, Package, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -42,10 +43,16 @@ const features = [
 export function HeroSection() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isFocused, setIsFocused] = useState(false)
+  const router = useRouter()
+
+  const handleSearch = () => {
+    const query = searchQuery.trim()
+    router.push(query ? `/productos?buscar=${encodeURIComponent(query)}` : "/productos")
+  }
 
   return (
-    <section className="relative min-h-[90vh] overflow-hidden bg-secondary/30 pt-20 md:pt-24">
-      <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:py-24 lg:px-8">
+    <section className="relative min-h-[100svh] overflow-hidden bg-secondary/30 pt-16 md:min-h-[90vh] md:pt-24">
+      <div className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-24 lg:px-8">
         <div className="mx-auto max-w-4xl text-center">
           {/* Badge */}
           <div className="mb-6 inline-flex items-center gap-2 rounded-lg bg-primary/10 px-4 py-2 text-sm font-medium text-primary cursor-default">
@@ -71,20 +78,31 @@ export function HeroSection() {
                 isFocused ? "ring-2 ring-primary/30 shadow-float" : ""
               }`}
             >
-              <div className="flex items-center gap-3 rounded-lg bg-card px-4 py-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                  <Sparkles className="h-5 w-5 text-primary" />
+              <div className="flex flex-col gap-3 rounded-lg bg-card px-4 py-3 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Describe lo que necesitas construir..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={() => setIsFocused(false)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        handleSearch()
+                      }
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none cursor-text"
+                  />
                 </div>
-                <input
-                  type="text"
-                  placeholder="Describe lo que necesitas construir..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setIsFocused(true)}
-                  onBlur={() => setIsFocused(false)}
-                  className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none cursor-text"
-                />
-                <Button className="rounded-lg bg-primary px-6 hover:bg-primary/90 cursor-pointer">
+                <Button
+                  className="w-full rounded-lg bg-primary px-6 hover:bg-primary/90 sm:w-auto cursor-pointer"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={handleSearch}
+                >
                   <Search className="mr-2 h-4 w-4" />
                   Buscar
                 </Button>
@@ -101,7 +119,11 @@ export function HeroSection() {
                       <button
                         key={suggestion}
                         className="rounded-lg bg-secondary px-3 py-2 text-sm text-secondary-foreground transition-colors hover:bg-primary/10 hover:text-primary cursor-pointer"
-                        onClick={() => setSearchQuery(suggestion)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setSearchQuery(suggestion)
+                          router.push(`/productos?buscar=${encodeURIComponent(suggestion)}`)
+                        }}
                       >
                         {suggestion}
                       </button>
