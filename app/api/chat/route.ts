@@ -9,8 +9,55 @@ type Product = {
   main_image_url: string | null
 }
 
+type QueryRefinement = {
+  intent: string
+  main_topic: string
+  keywords: string[]
+  synonyms: string[]
+  related_technologies: string[]
+  error_terms: string[]
+  search_queries: string[]
+}
+
 const SYSTEM_PROMPT =
-  "You are the TechHub. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency."
+  "You are the TechHub. Answer only with products present in PRODUCT_CONTEXT. Never invent products, IDs or prices. If context is weak, ask 1 concise clarification question. Always include price. If stock is below 5 units, mention urgency."
+
+const QUERY_REFINER_SYSTEM_PROMPT = `
+You are a search query optimizer for a technical knowledge base.
+
+Your task:
+Transform vague user questions into optimized technical search terms.
+
+Rules:
+- Return ONLY valid JSON
+- Do not explain anything
+- Extract:
+  - main topic
+  - technical keywords
+  - related technologies
+  - synonyms
+  - error terms if present
+  - intent
+
+Search optimization goals:
+- maximize database retrieval quality
+- include technical aliases
+- include framework/library names when implied
+- expand abbreviations
+- preserve original meaning
+
+JSON format:
+
+{
+  "intent": "string",
+  "main_topic": "string",
+  "keywords": [""],
+  "synonyms": [""],
+  "related_technologies": [""],
+  "error_terms": [""],
+  "search_queries": [""]
+}
+`;
 
 const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -26,6 +73,89 @@ function detectIntent(query: string): string {
   if (/(precio|barato|budget|presupuesto)/.test(lower)) return "budget"
   if (/(sensor|arduino|raspberry|iot|robot|automat)/.test(lower)) return "component_search"
   return "general_shopping"
+}
+
+const STOPWORDS = new Set([
+  "de", "la", "el", "los", "las", "un", "una", "unos", "unas", "y", "o", "para", "por", "con", "sin", "del",
+  "al", "que", "me", "mi", "mis", "tu", "tus", "su", "sus", "en", "a", "es", "son", "como", "qué", "quiero",
+  "necesito", "estoy", "desarrollando", "proyecto", "the", "and", "or", "for", "with", "without", "to", "of",
+  "in", "on", "is", "are", "i", "you", "my", "your", "a", "an",
+])
+
+function extractSearchTerms(query: string) {
+  const normalized = query
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+
+  const tokens = normalized
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
+
+  const keywordBoosts: Record<string, string[]> = {
+    iot: ["iot", "sensor", "arduino", "raspberry", "microcontrolador", "microcontroller", "esp32"],
+    component_search: ["modulo", "sensor", "placa", "arduino", "raspberry", "esp32"],
+    budget: ["economico", "barato", "budget", "precio"],
+  }
+
+  const intent = detectIntent(normalized)
+  const boosted = keywordBoosts[intent] ?? []
+  const mergedTokens = Array.from(new Set([...tokens, ...boosted])).slice(0, 10)
+  const phrase = mergedTokens.slice(0, 5).join(" ")
+
+  return { normalized, tokens: mergedTokens, phrase }
+}
+
+function safeArray(input: unknown): string[] {
+  if (!Array.isArray(input)) return []
+  return input.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean)
+}
+
+async function refineQueryWithGroq(query: string): Promise<QueryRefinement> {
+  const fallback: QueryRefinement = {
+    intent: detectIntent(query),
+    main_topic: query,
+    keywords: [],
+    synonyms: [],
+    related_technologies: [],
+    error_terms: [],
+    search_queries: [query],
+  }
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.groqApiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: env.groqModel,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: QUERY_REFINER_SYSTEM_PROMPT },
+        { role: "user", content: query },
+      ],
+    }),
+  })
+
+  if (!res.ok) return fallback
+  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  const content = json.choices?.[0]?.message?.content ?? ""
+  if (!content) return fallback
+
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>
+    return {
+      intent: typeof parsed.intent === "string" ? parsed.intent : fallback.intent,
+      main_topic: typeof parsed.main_topic === "string" ? parsed.main_topic : fallback.main_topic,
+      keywords: safeArray(parsed.keywords).slice(0, 8),
+      synonyms: safeArray(parsed.synonyms).slice(0, 8),
+      related_technologies: safeArray(parsed.related_technologies).slice(0, 8),
+      error_terms: safeArray(parsed.error_terms).slice(0, 6),
+      search_queries: safeArray(parsed.search_queries).slice(0, 6),
+    }
+  } catch {
+    return fallback
+  }
 }
 
 function buildContext(products: Product[]): string {
@@ -62,6 +192,7 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 }
 
 async function retrieveProducts(query: string): Promise<Product[]> {
+  const MAX_RESULTS = 5
   const cleanQuery = query.trim()
   // Importante: PostgREST necesita que los términos con espacios o comas 
   // dentro de un .or() estén envueltos en " "
@@ -71,31 +202,23 @@ async function retrieveProducts(query: string): Promise<Product[]> {
 
   // 1) Try full-text search
   // Usamos .wfts. para búsqueda de frases
-  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=5`
+  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=${MAX_RESULTS}`
   const ftsRes = await supabaseRequest(ftsPath)
 
   if (ftsRes.ok) {
     const rows = (await ftsRes.json()) as Product[]
-    if (rows.length > 0) return rows.slice(0, 5)
+    if (rows.length > 0) return rows.slice(0, MAX_RESULTS)
     logStage("retrieve_fts_empty", { query: cleanQuery })
   }
 
   // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
-  const normalized = cleanQuery
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s]/g, " ")
+  const { normalized, tokens, phrase } = extractSearchTerms(cleanQuery)
+  if (tokens.length === 0) {
+    logStage("retrieve_no_meaningful_terms", { query: cleanQuery })
+    return []
+  }
 
-  const rawTokens = cleanQuery
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 3)
-  const normalizedTokens = normalized.split(/\s+/).filter((t) => t.length >= 3)
-  const tokens = Array.from(new Set([...rawTokens, ...normalizedTokens])).slice(0, 8)
-
-  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized].filter((p) => p.length >= 3)))
+  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized, phrase].filter((p) => p.length >= 3)))
   const phraseFilters = phraseCandidates.flatMap((phrase) => {
     const like = encodeURIComponent(`%${phrase}%`)
     return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
@@ -116,7 +239,26 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   }
 
   const rows = (await ilikeRes.json()) as Product[]
-  return rows.slice(0, 5)
+  return rows.slice(0, MAX_RESULTS)
+}
+
+function rerankProducts(products: Product[], terms: string[]) {
+  const normalizedTerms = terms.map((t) => t.toLowerCase())
+  return products
+    .map((p) => {
+      const name = p.name.toLowerCase()
+      const desc = (p.short_description ?? "").toLowerCase()
+      const hitCount = normalizedTerms.reduce((acc, term) => {
+        if (name.includes(term)) return acc + 3
+        if (desc.includes(term)) return acc + 1
+        return acc
+      }, 0)
+      const stockScore = p.stock > 0 ? 0.2 : -2
+      return { product: p, score: hitCount + stockScore }
+    })
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r.product)
 }
 
 
@@ -142,12 +284,22 @@ export async function POST(req: Request) {
     if (!rawQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
     const userId = body.userId ?? "anonymous"
-    const detectedIntent = detectIntent(rawQuery)
+    const refined = await refineQueryWithGroq(rawQuery)
+    const detectedIntent = refined.intent || detectIntent(rawQuery)
+    const retrievalQueries = Array.from(new Set([rawQuery, ...refined.search_queries, refined.main_topic].filter(Boolean)))
 
     let products: Product[] = []
     try {
-      products = await retrieveProducts(rawQuery)
-      logStage("retrieve_ok", { count: products.length, intent: detectedIntent })
+      const candidates = await Promise.all(retrievalQueries.map((q) => retrieveProducts(q)))
+      const merged = Array.from(new Map(candidates.flat().map((p) => [p.id, p])).values())
+      const rankTerms = [
+        ...refined.keywords,
+        ...refined.synonyms,
+        ...refined.related_technologies,
+        ...extractSearchTerms(rawQuery).tokens,
+      ]
+      products = rerankProducts(merged, rankTerms).slice(0, 5)
+      logStage("retrieve_ok", { count: products.length, intent: detectedIntent, queryVariants: retrievalQueries.length })
     } catch (error) {
       logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })
@@ -174,7 +326,7 @@ export async function POST(req: Request) {
             { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
-              content: `User query: ${rawQuery}\n\nProduct context:\n${context}\n\nRules: never invent products; only use product IDs from context. Keep it concise and sales-oriented.`,
+              content: `USER_QUERY:\n${rawQuery}\n\nREFINED_QUERY_JSON:\n${JSON.stringify(refined)}\n\nPRODUCT_CONTEXT_START\n${context}\nPRODUCT_CONTEXT_END\n\nRules:\n- Use only PRODUCT_CONTEXT\n- If no good options in context, ask one clarification\n- Mention price in every recommendation\n- Keep concise and practical`,
             },
           ],
         }),
