@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
   User,
@@ -18,61 +19,78 @@ import {
   Clock,
   Check,
   Eye,
+  Loader,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Header } from "@/components/layout/header"
+import { Footer } from "@/components/layout/footer"
+import { getUserOrders } from "@/lib/supabase-queries"
+import { useSession } from "@/components/SessionProvider"
 
-interface Order {
+type Order = {
   id: string
-  number: string
-  date: string
+  order_number: string
+  status: string
   total: number
-  status: "pending" | "processing" | "shipped" | "delivered"
-  items: number
-  image: string
+  created_at: string
+  estimated_delivery: string
+  order_items: Array<{
+    product_id: string
+    quantity: number
+    products: { name: string; image_url: string }
+  }>
 }
 
 type TabType = "overview" | "orders" | "settings"
 
 export default function PerfilPage() {
+  const router = useRouter()
+  const { user, isLoading: authLoading, logout } = useSession()
   const [activeTab, setActiveTab] = useState<TabType>("overview")
   const [isEditing, setIsEditing] = useState(false)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false)
   const [userData, setUserData] = useState({
-    nombre: "Carlos Mendoza",
-    email: "carlos@example.com",
-    telefono: "+52 664 123 4567",
-    ubicacion: "Tijuana, Baja California",
+    nombre: "",
+    email: "",
+    telefono: "",
+    ubicacion: "",
   })
   const [editData, setEditData] = useState(userData)
 
-  const orders: Order[] = [
-    {
-      id: "1",
-      number: "ORD-2024-001",
-      date: "2024-12-01",
-      total: 2499.99,
-      status: "delivered",
-      items: 2,
-      image: "https://images.unsplash.com/photo-1588872657840-790ff3bde08f?w=80&h=80&fit=crop",
-    },
-    {
-      id: "2",
-      number: "ORD-2024-002",
-      date: "2024-11-28",
-      total: 1899.99,
-      status: "shipped",
-      items: 1,
-      image: "https://images.unsplash.com/photo-1603468620905-8fe5e0e8b640?w=80&h=80&fit=crop",
-    },
-    {
-      id: "3",
-      number: "ORD-2024-003",
-      date: "2024-11-15",
-      total: 599.99,
-      status: "processing",
-      items: 3,
-      image: "https://images.unsplash.com/photo-1599298881974-bc20f26ae475?w=80&h=80&fit=crop",
-    },
-  ]
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/iniciar-sesion")
+    } else if (user) {
+      setUserData({
+        nombre: user.nombre || "",
+        email: user.email || "",
+        telefono: "",
+        ubicacion: "",
+      })
+      setEditData({
+        nombre: user.nombre || "",
+        email: user.email || "",
+        telefono: "",
+        ubicacion: "",
+      })
+      loadOrders()
+    }
+  }, [user, authLoading])
+
+  const loadOrders = async () => {
+    if (!user) return
+    setIsLoadingOrders(true)
+    try {
+      const res = await getUserOrders(user.id)
+      if (res.error) throw res.error
+      setOrders(res.data || [])
+    } catch (err) {
+      console.error("Error loading orders:", err)
+    } finally {
+      setIsLoadingOrders(false)
+    }
+  }
 
   const handleSaveChanges = () => {
     setUserData(editData)
@@ -117,27 +135,17 @@ export default function PerfilPage() {
     }
   }
 
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="navbar-solid shadow-soft">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <Link href="/" className="flex items-center gap-2 cursor-pointer">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-                <Sparkles className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <span className="text-lg font-semibold text-foreground">TechMarket</span>
-            </Link>
-            <Link href="/">
-              <Button variant="ghost" className="rounded-lg cursor-pointer">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Volver al inicio
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen flex flex-col bg-background">
+      <Header />
 
       <main className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
         {/* Profile Header */}
@@ -328,36 +336,46 @@ export default function PerfilPage() {
         {/* Orders Tab */}
         {activeTab === "orders" && (
           <div className="space-y-4">
-            {orders.map((order) => (
-              <div key={order.id} className="rounded-xl border border-border bg-card p-6 shadow-soft hover:shadow-elevated transition-shadow">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex gap-4">
-                    <img
-                      src={order.image}
-                      alt="Product"
-                      className="h-20 w-20 rounded-lg object-cover bg-secondary"
-                    />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Pedido #{order.number}</p>
-                      <p className="font-semibold text-foreground">${order.total.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">{order.items} artículo(s) • {order.date}</p>
+            {isLoadingOrders ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="rounded-xl border border-border bg-card p-8 text-center shadow-soft">
+                <p className="text-muted-foreground">No tienes órdenes aún</p>
+              </div>
+            ) : (
+              orders.map((order) => (
+                <div key={order.id} className="rounded-xl border border-border bg-card p-6 shadow-soft hover:shadow-elevated transition-shadow">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex gap-4">
+                      <img
+                        src={order.order_items[0]?.products?.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=80&h=80&fit=crop"}
+                        alt="Product"
+                        className="h-20 w-20 rounded-lg object-cover bg-secondary"
+                      />
+                      <div>
+                        <p className="text-sm text-muted-foreground">Pedido #{order.order_number}</p>
+                        <p className="font-semibold text-foreground">${order.total.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">{order.order_items.length} artículo(s) • {new Date(order.created_at).toLocaleDateString()}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ${getStatusColor(order.status)}`}>
-                      {getStatusIcon(order.status)}
-                      {getStatusLabel(order.status)}
+                    <div className="flex items-center justify-between gap-4">
+                      <div className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ${getStatusColor(order.status)}`}>
+                        {getStatusIcon(order.status)}
+                        {getStatusLabel(order.status)}
+                      </div>
+                      <Link href={`/confirmacion-orden/${order.id}`}>
+                        <Button variant="ghost" className="rounded-lg cursor-pointer">
+                          <Eye className="h-4 w-4 mr-2" />
+                          Ver
+                        </Button>
+                      </Link>
                     </div>
-                    <Link href={`/confirmacion-orden/${order.id}`}>
-                      <Button variant="ghost" className="rounded-lg cursor-pointer">
-                        <Eye className="h-4 w-4 mr-2" />
-                        Ver
-                      </Button>
-                    </Link>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
@@ -409,7 +427,7 @@ export default function PerfilPage() {
                   <h3 className="font-semibold text-foreground">Cerrar sesión</h3>
                   <p className="text-sm text-muted-foreground">Salir de tu cuenta en este dispositivo</p>
                 </div>
-                <Button variant="destructive" className="rounded-lg cursor-pointer">
+                <Button onClick={logout} variant="destructive" className="rounded-lg cursor-pointer">
                   <LogOut className="h-4 w-4 mr-2" />
                   Salir
                 </Button>
@@ -418,6 +436,8 @@ export default function PerfilPage() {
           </div>
         )}
       </main>
+
+      <Footer />
     </div>
   )
 }

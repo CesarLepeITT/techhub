@@ -1,11 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
+import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
-  Check,
   Truck,
   CreditCard,
   Lock,
@@ -13,69 +12,42 @@ import {
   User,
   Mail,
   Phone,
-  Package,
-  CheckCircle2
+  AlertCircle,
+  Loader,
+  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
-import { cn } from "@/lib/utils"
+import { getCart, createOrder, addOrderItems, clearCart } from "@/lib/supabase-queries"
+import { useSession } from "@/components/SessionProvider"
 
-interface CartItem {
+type CartItem = {
   id: string
-  name: string
-  price: number
+  product_id: string
   quantity: number
-  image: string
+  products: {
+    id: string
+    name: string
+    image_url: string
+    price: number
+    wholesale_price: number | null
+    minimum_wholesale_quantity: number | null
+  }
 }
 
-const cartItems: CartItem[] = [
-  {
-    id: "1",
-    name: "Arduino Nano V3.0 ATmega328P",
-    price: 149,
-    quantity: 2,
-    image: "https://images.unsplash.com/photo-1518770660439-4636190af475?w=100&h=100&fit=crop",
-  },
-  {
-    id: "2",
-    name: "Sensor Ultrasónico HC-SR04",
-    price: 89,
-    quantity: 1,
-    image: "https://images.unsplash.com/photo-1517077304055-6e89abbf09b0?w=100&h=100&fit=crop",
-  },
-]
-
-const steps = [
-  { number: 1, name: "Envío", icon: Truck, active: true, completed: false },
-  { number: 2, name: "Pago", icon: CreditCard, active: false, completed: false },
-  { number: 3, name: "Confirmación", icon: Check, active: false, completed: false },
-]
-
-const shippingOptions = [
-  { id: "standard", name: "Estándar", price: 79, days: "5-7 días" },
-  { id: "express", name: "Express", price: 149, days: "2-3 días" },
-  { id: "local", name: "Entrega local", price: 0, days: "1-2 días" },
-]
-
-const paymentMethods = [
-  { id: "transfer", name: "Transferencia bancaria", description: "Transferencia al banco" },
-  { id: "cash", name: "Pago contra entrega", description: "Paga al recibir" },
-  { id: "card", name: "Tarjeta de crédito/débito", description: "Visa, Mastercard, Amex" },
-]
-
-function formatPrice(price: number): string {
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    minimumFractionDigits: 0,
-  }).format(price)
-}
+type Step = "shipping" | "payment" | "confirmation"
 
 export default function CheckoutPage() {
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
-  const [selectedShipping, setSelectedShipping] = useState("local")
-  const [selectedPayment, setSelectedPayment] = useState("cash")
+  const router = useRouter()
+  const { user, isLoading: authLoading } = useSession()
+  const [currentStep, setCurrentStep] = useState<Step>("shipping")
+  const [cartItems, setCartItems] = useState<CartItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [error, setError] = useState("")
+  const [orderId, setOrderId] = useState("")
+
   const [formData, setFormData] = useState({
     nombre: "",
     email: "",
@@ -84,382 +56,379 @@ export default function CheckoutPage() {
     ciudad: "",
     estado: "",
     codigoPostal: "",
+    shippingMethod: "standard",
+    paymentMethod: "transfer",
   })
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/iniciar-sesion")
+    } else if (user) {
+      loadCart()
+    }
+  }, [user, authLoading])
+
+  const loadCart = async () => {
+    if (!user) return
+    setIsLoading(true)
+    try {
+      const res = await getCart(user.id)
+      if (res.error) throw res.error
+      if (!res.data || res.data.length === 0) {
+        router.push("/carrito")
+        return
+      }
+      setCartItems(res.data)
+    } catch (err) {
+      setError("Error al cargar el carrito")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const shippingCost = shippingOptions.find(s => s.id === selectedShipping)?.price || 0
-  const total = subtotal + shippingCost
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    setFormData({ ...formData, [name]: value })
+  }
+
+  const shippingCosts = {
+    standard: 79,
+    express: 149,
+    local: 0,
+  }
+
+  const subtotal = cartItems.reduce((sum, item) => {
+    const isWholesale = item.quantity >= (item.products.minimum_wholesale_quantity || 10)
+    const price = isWholesale && item.products.wholesale_price
+      ? item.products.wholesale_price
+      : item.products.price
+    return sum + price * item.quantity
+  }, 0)
+
+  const shipping = shippingCosts[formData.shippingMethod as keyof typeof shippingCosts] || 0
+  const tax = subtotal * 0.05
+  const total = subtotal + shipping + tax
+
+  const handleSubmitOrder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+
+    setIsProcessing(true)
+    setError("")
+
+    try {
+      const orderNumber = `ORD-${Date.now()}`
+      const estimatedDelivery = new Date()
+      if (formData.shippingMethod === "express") {
+        estimatedDelivery.setDate(estimatedDelivery.getDate() + 2)
+      } else if (formData.shippingMethod === "standard") {
+        estimatedDelivery.setDate(estimatedDelivery.getDate() + 6)
+      } else {
+        estimatedDelivery.setDate(estimatedDelivery.getDate() + 1)
+      }
+
+      const orderRes = await createOrder(user.id, {
+        order_number: orderNumber,
+        subtotal,
+        shipping_cost: shipping,
+        tax,
+        total,
+        shipping_method: formData.shippingMethod,
+        payment_method: formData.paymentMethod,
+        shipping_address: formData.direccion,
+        shipping_city: formData.ciudad,
+        shipping_state: formData.estado,
+        shipping_postal_code: formData.codigoPostal,
+        customer_phone: formData.telefono,
+        customer_email: formData.email,
+        estimated_delivery: estimatedDelivery.toISOString().split("T")[0],
+      })
+
+      if (orderRes.error) throw orderRes.error
+      if (!orderRes.data) throw new Error("No se creó la orden")
+
+      const itemsToAdd = cartItems.map((item) => {
+        const isWholesale = item.quantity >= (item.products.minimum_wholesale_quantity || 10)
+        const price = isWholesale && item.products.wholesale_price
+          ? item.products.wholesale_price
+          : item.products.price
+        return {
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price,
+        }
+      })
+
+      const itemsRes = await addOrderItems(orderRes.data.id, itemsToAdd)
+      if (itemsRes.error) throw itemsRes.error
+
+      await clearCart(user.id)
+
+      setOrderId(orderRes.data.id)
+      setCurrentStep("confirmation")
+    } catch (err) {
+      setError("Error al procesar la orden")
+      console.error(err)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  if (authLoading || isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <Header />
 
-      <main className="pb-12 pt-20 md:pt-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          {/* Breadcrumb */}
-          <div className="mb-8 flex items-center justify-between">
-            <Link href="/carrito" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary cursor-pointer">
-              <ArrowLeft className="h-4 w-4" />
-              Volver al carrito
-            </Link>
-            <h1 className="text-2xl font-bold text-foreground">Checkout</h1>
-          </div>
+      <main className="flex-1">
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          {error && (
+            <div className="mb-6 rounded-lg bg-destructive/10 p-4 flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              {error}
+            </div>
+          )}
 
-          {/* Progress Steps */}
-          <div className="mb-8 flex items-center justify-between">
-            {steps.map((step, index) => (
-              <div key={step.number} className="flex items-center">
-                <button
-                  onClick={() => setCurrentStep(step.number as any)}
-                  className={cn(
-                    "flex h-12 w-12 items-center justify-center rounded-full font-semibold transition-all",
-                    currentStep >= step.number
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-secondary text-muted-foreground"
-                  )}
-                >
-                  {currentStep > step.number ? (
-                    <Check className="h-6 w-6" />
-                  ) : (
-                    step.number
-                  )}
-                </button>
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-foreground">{step.name}</p>
+          {currentStep === "confirmation" ? (
+            <div className="max-w-2xl mx-auto">
+              <div className="rounded-xl border border-border bg-card p-8 text-center shadow-soft">
+                <div className="mb-4 flex justify-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                    <Check className="h-8 w-8 text-green-600" />
+                  </div>
                 </div>
-                {index < steps.length - 1 && (
-                  <div
-                    className={cn(
-                      "mx-4 h-1 flex-1 max-w-xs rounded-full transition-colors",
-                      currentStep > step.number ? "bg-primary" : "bg-border"
-                    )}
-                  />
-                )}
+                <h1 className="text-2xl font-bold text-foreground">¡Orden confirmada!</h1>
+                <p className="mt-2 text-muted-foreground">Tu pedido ha sido procesado exitosamente</p>
+                <Link href={`/confirmacion-orden/${orderId}`} className="mt-6 inline-block">
+                  <Button className="rounded-lg bg-primary hover:bg-primary/90 cursor-pointer">
+                    Ver detalles de orden
+                  </Button>
+                </Link>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="grid gap-8 lg:grid-cols-3">
+              {/* Form */}
+              <div className="lg:col-span-2">
+                <div className="mb-8">
+                  <h1 className="text-3xl font-bold text-foreground">Checkout</h1>
+                </div>
 
-          <div className="grid gap-8 lg:grid-cols-3">
-            {/* Form Section */}
-            <div className="lg:col-span-2">
-              {/* Step 1: Shipping */}
-              {currentStep === 1 && (
-                <div className="space-y-6">
-                  <div>
-                    <h2 className="mb-4 text-xl font-semibold text-foreground">Información de envío</h2>
-
-                    <form className="space-y-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
+                <form onSubmit={handleSubmitOrder} className="space-y-6">
+                  {/* Shipping Info */}
+                  {currentStep === "shipping" && (
+                    <div className="rounded-xl border border-border bg-card p-6 shadow-soft">
+                      <h2 className="mb-4 text-lg font-semibold text-foreground">Dirección de envío</h2>
+                      <div className="space-y-4">
                         <div>
-                          <label htmlFor="nombre" className="mb-2 block text-sm font-medium text-foreground">
-                            Nombre completo
-                          </label>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">Nombre</label>
                           <input
-                            id="nombre"
                             type="text"
                             name="nombre"
                             value={formData.nombre}
-                            onChange={handleChange}
-                            className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                            onChange={handleInputChange}
                             placeholder="Tu nombre"
+                            className="w-full rounded-lg border border-border bg-background py-2.5 px-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                            required
                           />
                         </div>
                         <div>
-                          <label htmlFor="email" className="mb-2 block text-sm font-medium text-foreground">
-                            Correo electrónico
-                          </label>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">Email</label>
                           <input
-                            id="email"
                             type="email"
                             name="email"
                             value={formData.email}
-                            onChange={handleChange}
-                            className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                            placeholder="correo@ejemplo.com"
+                            onChange={handleInputChange}
+                            placeholder="tu@email.com"
+                            className="w-full rounded-lg border border-border bg-background py-2.5 px-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                            required
                           />
                         </div>
-                      </div>
-
-                      <div>
-                        <label htmlFor="telefono" className="mb-2 block text-sm font-medium text-foreground">
-                          Teléfono
-                        </label>
-                        <input
-                          id="telefono"
-                          type="tel"
-                          name="telefono"
-                          value={formData.telefono}
-                          onChange={handleChange}
-                          className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                          placeholder="+52 664 123 4567"
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="direccion" className="mb-2 block text-sm font-medium text-foreground">
-                          Dirección
-                        </label>
-                        <input
-                          id="direccion"
-                          type="text"
-                          name="direccion"
-                          value={formData.direccion}
-                          onChange={handleChange}
-                          className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                          placeholder="Calle Principal 123"
-                        />
-                      </div>
-
-                      <div className="grid gap-4 sm:grid-cols-3">
                         <div>
-                          <label htmlFor="ciudad" className="mb-2 block text-sm font-medium text-foreground">
-                            Ciudad
-                          </label>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">Teléfono</label>
                           <input
-                            id="ciudad"
+                            type="tel"
+                            name="telefono"
+                            value={formData.telefono}
+                            onChange={handleInputChange}
+                            placeholder="+52 664 123 4567"
+                            className="w-full rounded-lg border border-border bg-background py-2.5 px-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">Dirección</label>
+                          <input
                             type="text"
-                            name="ciudad"
-                            value={formData.ciudad}
-                            onChange={handleChange}
-                            className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                            placeholder="Tijuana"
+                            name="direccion"
+                            value={formData.direccion}
+                            onChange={handleInputChange}
+                            placeholder="Calle y número"
+                            className="w-full rounded-lg border border-border bg-background py-2.5 px-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                            required
                           />
                         </div>
-                        <div>
-                          <label htmlFor="estado" className="mb-2 block text-sm font-medium text-foreground">
-                            Estado
-                          </label>
-                          <input
-                            id="estado"
-                            type="text"
-                            name="estado"
-                            value={formData.estado}
-                            onChange={handleChange}
-                            className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                            placeholder="BC"
-                          />
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-foreground">Ciudad</label>
+                            <input
+                              type="text"
+                              name="ciudad"
+                              value={formData.ciudad}
+                              onChange={handleInputChange}
+                              placeholder="Ciudad"
+                              className="w-full rounded-lg border border-border bg-background py-2.5 px-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-sm font-medium text-foreground">Estado</label>
+                            <input
+                              type="text"
+                              name="estado"
+                              value={formData.estado}
+                              onChange={handleInputChange}
+                              placeholder="Estado"
+                              className="w-full rounded-lg border border-border bg-background py-2.5 px-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                              required
+                            />
+                          </div>
                         </div>
                         <div>
-                          <label htmlFor="codigoPostal" className="mb-2 block text-sm font-medium text-foreground">
-                            Código postal
-                          </label>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">Código postal</label>
                           <input
-                            id="codigoPostal"
                             type="text"
                             name="codigoPostal"
                             value={formData.codigoPostal}
-                            onChange={handleChange}
-                            className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                            onChange={handleInputChange}
                             placeholder="22000"
+                            className="w-full rounded-lg border border-border bg-background py-2.5 px-4 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
+                            required
                           />
                         </div>
                       </div>
-                    </form>
-                  </div>
 
-                  <div>
-                    <h2 className="mb-4 text-xl font-semibold text-foreground">Método de envío</h2>
-                    <div className="space-y-3">
-                      {shippingOptions.map((option) => (
-                        <label
-                          key={option.id}
-                          className={cn(
-                            "flex items-start gap-3 rounded-lg border-2 p-4 transition-colors cursor-pointer",
-                            selectedShipping === option.id
-                              ? "border-primary bg-primary/5"
-                              : "border-border hover:border-primary/30"
-                          )}
-                        >
-                          <input
-                            type="radio"
-                            name="shipping"
-                            value={option.id}
-                            checked={selectedShipping === option.id}
-                            onChange={() => setSelectedShipping(option.id)}
-                            className="sr-only"
-                          />
-                          <div className={cn(
-                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                            selectedShipping === option.id
-                              ? "border-primary bg-primary"
-                              : "border-border"
-                          )}>
-                            {selectedShipping === option.id && (
-                              <Check className="h-3 w-3 text-primary-foreground" />
-                            )}
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-foreground">{option.name}</p>
-                            <p className="text-sm text-muted-foreground">{option.days}</p>
-                          </div>
-                          <span className="font-semibold text-foreground">
-                            {option.price === 0 ? "Gratis" : formatPrice(option.price)}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                      <h3 className="mt-6 mb-4 font-semibold text-foreground">Método de envío</h3>
+                      <div className="space-y-3">
+                        {[
+                          { value: "standard", label: "Estándar", cost: 79, days: "5-7" },
+                          { value: "express", label: "Express", cost: 149, days: "2-3" },
+                          { value: "local", label: "Local", cost: 0, days: "1-2" },
+                        ].map((method) => (
+                          <label key={method.value} className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary transition-colors">
+                            <input
+                              type="radio"
+                              name="shippingMethod"
+                              value={method.value}
+                              checked={formData.shippingMethod === method.value}
+                              onChange={handleInputChange}
+                              className="cursor-pointer"
+                            />
+                            <div className="flex-1">
+                              <p className="font-medium text-foreground">{method.label}</p>
+                              <p className="text-sm text-muted-foreground">{method.days} días</p>
+                            </div>
+                            <p className="font-semibold text-primary">${method.cost}</p>
+                          </label>
+                        ))}
+                      </div>
 
-                  <Button
-                    className="w-full rounded-lg bg-primary py-6 hover:bg-primary/90 cursor-pointer"
-                    onClick={() => setCurrentStep(2)}
-                  >
-                    Continuar al pago
-                  </Button>
-                </div>
-              )}
-
-              {/* Step 2: Payment */}
-              {currentStep === 2 && (
-                <div className="space-y-6">
-                  <h2 className="text-xl font-semibold text-foreground">Selecciona tu método de pago</h2>
-                  <div className="space-y-3">
-                    {paymentMethods.map((method) => (
-                      <label
-                        key={method.id}
-                        className={cn(
-                          "flex items-center gap-4 rounded-lg border-2 p-4 transition-colors cursor-pointer",
-                          selectedPayment === method.id
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-primary/30"
-                        )}
+                      <Button
+                        type="button"
+                        onClick={() => setCurrentStep("payment")}
+                        className="mt-6 w-full rounded-lg bg-primary hover:bg-primary/90 cursor-pointer"
                       >
-                        <input
-                          type="radio"
-                          name="payment"
-                          value={method.id}
-                          checked={selectedPayment === method.id}
-                          onChange={() => setSelectedPayment(method.id)}
-                          className="sr-only"
-                        />
-                        <div className={cn(
-                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                          selectedPayment === method.id
-                            ? "border-primary bg-primary"
-                            : "border-border"
-                        )}>
-                          {selectedPayment === method.id && (
-                            <Check className="h-3 w-3 text-primary-foreground" />
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-foreground">{method.name}</p>
-                          <p className="text-sm text-muted-foreground">{method.description}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-
-                  <div className="flex gap-3">
-                    <Button
-                      variant="outline"
-                      className="flex-1 rounded-lg cursor-pointer"
-                      onClick={() => setCurrentStep(1)}
-                    >
-                      Atrás
-                    </Button>
-                    <Button
-                      className="flex-1 rounded-lg bg-primary hover:bg-primary/90 cursor-pointer"
-                      onClick={() => setCurrentStep(3)}
-                    >
-                      Confirmar orden
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3: Confirmation */}
-              {currentStep === 3 && (
-                <div className="text-center">
-                  <div className="mb-6 flex justify-center">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                      <CheckCircle2 className="h-8 w-8 text-primary" />
+                        Continuar a pago
+                      </Button>
                     </div>
-                  </div>
-                  <h2 className="mb-2 text-2xl font-bold text-foreground">¡Orden confirmada!</h2>
-                  <p className="mb-6 text-muted-foreground">
-                    Tu pedido ha sido recibido. Recibirás una confirmación por correo electrónico.
-                  </p>
-                  <div className="rounded-lg border border-border bg-card p-6 text-left">
-                    <p className="text-sm font-medium text-muted-foreground mb-1">Número de orden</p>
-                    <p className="text-2xl font-bold text-foreground mb-4">#ORD-2024-00123</p>
-                    <p className="text-sm font-medium text-muted-foreground mb-1">Total</p>
-                    <p className="text-2xl font-bold text-foreground">{formatPrice(total)}</p>
-                  </div>
-                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                    <Link href="/productos" className="flex-1">
-                      <Button variant="outline" className="w-full rounded-lg cursor-pointer">
-                        Seguir comprando
-                      </Button>
-                    </Link>
-                    <Link href="/perfil" className="flex-1">
-                      <Button className="w-full rounded-lg bg-primary hover:bg-primary/90 cursor-pointer">
-                        Ver mis órdenes
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+                  )}
 
-            {/* Order Summary */}
-            <div className="lg:col-span-1">
-              <div className="sticky top-24 rounded-xl border border-border bg-card p-6 shadow-soft">
-                <h3 className="mb-4 text-lg font-semibold text-foreground">Resumen del pedido</h3>
-
-                <div className="mb-6 space-y-3 border-b border-border pb-6">
-                  {cartItems.map((item) => (
-                    <div key={item.id} className="flex gap-3">
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        width={50}
-                        height={50}
-                        className="rounded-lg"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground line-clamp-1">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">Cantidad: {item.quantity}</p>
+                  {/* Payment Info */}
+                  {currentStep === "payment" && (
+                    <div className="rounded-xl border border-border bg-card p-6 shadow-soft">
+                      <h2 className="mb-4 text-lg font-semibold text-foreground">Método de pago</h2>
+                      <div className="space-y-3 mb-6">
+                        {[
+                          { value: "transfer", label: "Transferencia bancaria" },
+                          { value: "cash", label: "Pago en efectivo" },
+                          { value: "credit", label: "Tarjeta de crédito" },
+                        ].map((method) => (
+                          <label key={method.value} className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary transition-colors">
+                            <input
+                              type="radio"
+                              name="paymentMethod"
+                              value={method.value}
+                              checked={formData.paymentMethod === method.value}
+                              onChange={handleInputChange}
+                              className="cursor-pointer"
+                            />
+                            <p className="font-medium text-foreground">{method.label}</p>
+                          </label>
+                        ))}
                       </div>
-                      <p className="font-semibold text-foreground">
-                        {formatPrice(item.price * item.quantity)}
-                      </p>
+
+                      <div className="flex gap-3">
+                        <Button
+                          type="button"
+                          onClick={() => setCurrentStep("shipping")}
+                          variant="outline"
+                          className="flex-1 rounded-lg cursor-pointer"
+                        >
+                          Atrás
+                        </Button>
+                        <Button
+                          type="submit"
+                          disabled={isProcessing}
+                          className="flex-1 rounded-lg bg-primary hover:bg-primary/90 cursor-pointer"
+                        >
+                          {isProcessing ? "Procesando..." : "Confirmar orden"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </form>
+              </div>
+
+              {/* Summary */}
+              <div className="h-fit rounded-xl border border-border bg-card p-6 shadow-soft sticky top-4">
+                <h3 className="mb-4 text-lg font-semibold text-foreground">Resumen de orden</h3>
+                <div className="mb-4 space-y-3 border-b border-border pb-4">
+                  {cartItems.map((item) => (
+                    <div key={item.id} className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{item.products.name} x{item.quantity}</span>
+                      <span className="font-medium text-foreground">${(item.quantity * item.products.price).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
 
-                <div className="space-y-2 border-b border-border pb-6 text-sm">
-                  <div className="flex justify-between">
+                <div className="space-y-2 mb-4 pb-4 border-b border-border">
+                  <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-medium text-foreground">{formatPrice(subtotal)}</span>
+                    <span className="font-medium">${subtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Envío</span>
-                    <span className="font-medium text-foreground">
-                      {shippingCost === 0 ? "Gratis" : formatPrice(shippingCost)}
-                    </span>
+                    <span className="font-medium">${shipping.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Impuestos</span>
+                    <span className="font-medium">${tax.toFixed(2)}</span>
                   </div>
                 </div>
 
-                <div className="flex justify-between py-4">
-                  <span className="text-lg font-semibold text-foreground">Total</span>
-                  <span className="text-2xl font-bold text-primary">{formatPrice(total)}</span>
-                </div>
-
-                <div className="rounded-lg bg-primary/10 p-3 text-xs text-primary flex items-center gap-2">
-                  <Lock className="h-4 w-4 shrink-0" />
-                  Pago seguro con encriptación SSL
+                <div className="flex justify-between">
+                  <span className="font-semibold">Total</span>
+                  <span className="text-2xl font-bold text-primary">${total.toFixed(2)}</span>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </main>
 
