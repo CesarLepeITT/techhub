@@ -159,6 +159,9 @@ export async function POST(req: Request) {
         const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
         explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
         if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
+
+        // Remove UUID patterns from the explanation
+        explanation = explanation.replace(/\s*\([a-f0-9\-]{36}\)\s*/gi, "")
       }
     }
 
