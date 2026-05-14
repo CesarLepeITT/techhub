@@ -188,7 +188,7 @@ async function describeImageForSearch(imageDataUrl: string, originalQuery: strin
     const res = await requestGroqChat({
       stagePrefix: "image_description_groq",
       model: env.groqVisionModel,
-      temperature: 0.2,
+      temperature: 0.1,
       messages: [
         { role: "system", content: IMAGE_DESCRIPTION_SYSTEM_PROMPT },
         {
