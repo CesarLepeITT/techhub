@@ -16,7 +16,8 @@ const QUERY_REWRITE_SYSTEM_PROMPT =
   "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas. La corrección de ortografía es la prioridad; asegúrate de corregir palabras mal escritas. Asegurate de poner tildes."
 
 const IMAGE_DESCRIPTION_SYSTEM_PROMPT =
-"Eres un asistente visual para una tienda de tecnología y electrónica. Describe en español, de forma breve y útil para búsqueda, lo que se ve en la imagen. Enfócate solamente en componentes, dispositivos, cables, módulos, herramientas, marcas visibles, colores, conectores, estado físico y posibles productos similares. No inventes detalles no visibles. Quiero que la descripción solo incluya palabras clave para describir estos objetos."
+"Eres un extractor de etiquetas técnicas para una tienda de electrónica. Tu objetivo es identificar el objeto principal de la imagen para una búsqueda en base de datos. Responde ÚNICAMENTE con el nombre del producto y 2 o 3 palabras clave técnicas. Ejemplo de salida: Teléfono celular. Smartphone. Pantalla táctil. Ejemplo de salida: Laptop. Computadora portátil. Intel Core. No uses oraciones completas, no describas el fondo ni el estado físico o a las personas alrededor."
+
 const MAX_SEARCH_QUERY_LENGTH = 400
 const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000
 
@@ -44,7 +45,7 @@ const env = {
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
-  groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
+  groqModel: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile", 
   groqVisionModel: process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct", 
 }
 
@@ -243,7 +244,7 @@ async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
     const res = await requestGroqChat({
       stagePrefix: "query_rewrite_groq",
       temperature: 0.25,
-      model: "llama-3.1-70b-versatile",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: QUERY_REWRITE_SYSTEM_PROMPT },
         { role: "user", content: normalizedQuery },
