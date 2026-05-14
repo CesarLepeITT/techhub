@@ -141,6 +141,8 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [cameraError, setCameraError] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -148,6 +150,40 @@ export default function AssistantPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isTyping])
+
+  useEffect(() => () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+  }, [])
+
+  const closeCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+    cameraStreamRef.current = null
+    setIsCameraOpen(false)
+  }
+
+  const openCamera = async () => {
+    if (isTyping) return
+    setCameraError("")
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Tu navegador no permite abrir la cámara desde esta página. Usa el botón de subir fotografía.")
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      })
+      cameraStreamRef.current = stream
+      setIsCameraOpen(true)
+      setTimeout(() => {
+        if (videoRef.current) videoRef.current.srcObject = stream
+      }, 0)
+    } catch {
+      setCameraError("No pude abrir la cámara. Revisa los permisos del navegador o usa el botón de subir fotografía.")
+    }
+  }
 
   const handleSubmit = async (prompt: string) => {
     if (!prompt.trim() || isTyping) return
