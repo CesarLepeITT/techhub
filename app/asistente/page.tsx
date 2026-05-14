@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { Sparkles, Send, ArrowRight, Package, Zap, GraduationCap, Puzzle, RefreshCw } from "lucide-react"
+import { useState } from "react"
+import { Sparkles, Send, ArrowRight, Package, Zap, GraduationCap, Puzzle, RefreshCw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { SmartInput } from "@/components/ui/smart-input"
+import { CameraCapture } from "@/components/ui/camera-capture"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { ProductRecommendationCard, type ChatProduct } from "@/components/asistente/product-recommendation-card"
@@ -58,11 +60,8 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, isTyping])
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
 
   const handleSubmit = async (prompt: string) => {
     if (!prompt.trim() || isTyping) return
@@ -98,6 +97,11 @@ export default function AssistantPage() {
     }
   }
 
+  const handlePhotoSend = (imageData: string) => {
+    setCapturedImage(imageData)
+    setCameraOpen(false)
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
@@ -106,12 +110,90 @@ export default function AssistantPage() {
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center py-12">
               <div className="mb-8 text-center"><div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 shadow-soft"><Sparkles className="h-8 w-8 text-primary" /></div><h1 className="mb-2 text-2xl font-bold text-foreground sm:text-3xl">Asistente de compras IA</h1></div>
-              <div className="mb-8 w-full max-w-2xl"><form onSubmit={(e) => { e.preventDefault(); handleSubmit(inputValue) }} className="flex items-center gap-3 rounded-lg bg-card/80 px-4 py-3"><input type="text" placeholder="Describe lo que quieres construir..." value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none" /><Button type="submit" className="rounded-xl bg-primary px-5 hover:bg-primary/90" disabled={!inputValue.trim() || isTyping}><Send className="h-4 w-4" /></Button></form></div>
+              <div className="mb-8 w-full max-w-2xl">
+                {cameraOpen ? (
+                  <CameraCapture onClose={() => setCameraOpen(false)} onSend={handlePhotoSend} />
+                ) : (
+                  <div className="space-y-3 rounded-lg bg-card/80 px-4 py-3">
+                    {capturedImage && (
+                      <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3 text-left">
+                        <img src={capturedImage} alt="Foto adjunta" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground">Foto adjunta</p>
+                          <p className="text-xs text-muted-foreground">Se conserva para usarla en la búsqueda visual.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCapturedImage(null)}
+                          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
+                          aria-label="Quitar foto"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(inputValue) }} className="flex items-center gap-3">
+                      <SmartInput
+                        value={inputValue}
+                        onValueChange={setInputValue}
+                        onSubmit={() => handleSubmit(inputValue)}
+                        onCameraClick={() => setCameraOpen(true)}
+                        placeholder="Describe lo que quieres construir..."
+                        leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                        wrapperClassName="flex-1 min-w-0"
+                        inputClassName="h-12 rounded-xl border-border bg-background text-base shadow-none"
+                      />
+                      <Button type="submit" className="rounded-xl bg-primary px-5 hover:bg-primary/90" disabled={!inputValue.trim() || isTyping}>
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </form>
+                  </div>
+                )}
+              </div>
               <div className="w-full max-w-2xl"><p className="mb-4 text-center text-sm font-medium text-muted-foreground">Prueba con estos ejemplos</p><div className="grid gap-3 sm:grid-cols-2">{suggestedPrompts.map((prompt, index) => <button key={index} className="group flex items-center gap-3 rounded-lg bg-card p-4 text-left shadow-soft transition-lift" onClick={() => handleSubmit(prompt.text)}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground"><prompt.icon className="h-5 w-5" /></div><span className="text-sm text-foreground">{prompt.text}</span><ArrowRight className="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /></button>)}</div></div>
             </div>
           ) : (
-            <div className="flex flex-1 flex-col"><div className="flex-1 space-y-6 py-6">{messages.map((message) => <MessageBubble key={message.id} message={message} />)}{isTyping && <div className="flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10"><Sparkles className="h-5 w-5 text-primary animate-pulse-soft" /></div><div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft"><div className="flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin text-primary" /><span className="text-sm text-muted-foreground">Buscando productos...</span></div></div></div>}<div ref={messagesEndRef} /></div>
-              <div className="sticky bottom-0 bg-gradient-to-t from-background via-background to-transparent pb-6 pt-4"><form onSubmit={(e) => { e.preventDefault(); handleSubmit(inputValue) }} className="flex items-center gap-3 rounded-lg bg-card/80 px-4 py-3"><input type="text" placeholder="Escribe un mensaje..." value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none" /><Button type="submit" size="icon" className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90" disabled={!inputValue.trim() || isTyping}><Send className="h-4 w-4" /></Button></form></div>
+            <div className="flex flex-1 flex-col"><div className="flex-1 space-y-6 py-6">{messages.map((message) => <MessageBubble key={message.id} message={message} />)}{isTyping && <div className="flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10"><Sparkles className="h-5 w-5 text-primary animate-pulse-soft" /></div><div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft"><div className="flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin text-primary" /><span className="text-sm text-muted-foreground">Buscando productos...</span></div></div></div>}</div>
+              <div className="sticky bottom-0 bg-gradient-to-t from-background via-background to-transparent pb-6 pt-4">
+                <div className="space-y-3 rounded-lg bg-card/80 px-4 py-3">
+                  {capturedImage && (
+                    <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3 text-left">
+                      <img src={capturedImage} alt="Foto adjunta" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">Foto adjunta</p>
+                        <p className="text-xs text-muted-foreground">Se conserva para usarla en la búsqueda visual.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCapturedImage(null)}
+                        className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
+                        aria-label="Quitar foto"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                  {cameraOpen ? (
+                    <CameraCapture onClose={() => setCameraOpen(false)} onSend={handlePhotoSend} />
+                  ) : (
+                    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(inputValue) }} className="flex items-center gap-3">
+                      <SmartInput
+                        value={inputValue}
+                        onValueChange={setInputValue}
+                        onSubmit={() => handleSubmit(inputValue)}
+                        onCameraClick={() => setCameraOpen(true)}
+                        placeholder="Escribe un mensaje..."
+                        leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                        wrapperClassName="flex-1 min-w-0"
+                        inputClassName="h-11 rounded-xl border-border bg-background text-base shadow-none"
+                      />
+                      <Button type="submit" size="icon" className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90" disabled={!inputValue.trim() || isTyping}>
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </form>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>

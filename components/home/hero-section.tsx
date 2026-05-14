@@ -50,6 +50,16 @@ interface Message {
   timestamp: Date
 }
 
+function stripIdsFromAssistantText(input: string): string {
+  return input
+    .replace(/\(\s*id\s*:\s*[a-f0-9\-]{36}\s*\)/gi, "")
+    .replace(/\[\s*id\s*:\s*[a-f0-9\-]{36}\s*\]/gi, "")
+    .replace(/\b(id|uuid)\s*:\s*[a-f0-9\-]{36}\b/gi, "")
+    .replace(/[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+}
+
 function MessageBubble({ message }: { message: Message }) {
   if (message.type === "user") {
     return (
@@ -66,16 +76,15 @@ function MessageBubble({ message }: { message: Message }) {
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
         <Sparkles className="h-5 w-5 text-primary" />
       </div>
-      <div className="flex-1 space-y-3">
-        {message.products && message.products.length > 0 ? (
+      <div className="flex-1 space-y-3 text-left">
+        <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft">
+          <p className="text-sm text-foreground leading-relaxed">{message.content}</p>
+        </div>
+        {message.products && message.products.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-2">
             {message.products.map((product) => (
               <ProductRecommendationCard key={product.id} product={product} />
             ))}
-          </div>
-        ) : (
-          <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft">
-            <p className="text-sm text-foreground leading-relaxed">{message.content}</p>
           </div>
         )}
       </div>
@@ -110,7 +119,7 @@ export function HeroSection() {
         {
           id: (Date.now() + 1).toString(),
           type: "assistant",
-          content: data.response,
+          content: stripIdsFromAssistantText(data.response ?? ""),
           products: data.products,
           timestamp: new Date(),
         },
