@@ -7,11 +7,18 @@ type Product = {
   retail_price: number
   stock: number
   main_image_url: string | null
-  rank?: number
 }
 
 const SYSTEM_PROMPT =
   "You are the TechHub. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency."
+
+const env = {
+  supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+  supabaseServiceRoleKey:
+    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
+  groqApiKey: process.env.GROQ_API_KEY ?? "",
+  groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
+}
 
 function detectIntent(query: string): string {
   const lower = query.toLowerCase()
@@ -30,11 +37,24 @@ function buildContext(products: Product[]): string {
     .join("\n")
 }
 
+function logStage(stage: string, details: Record<string, unknown>) {
+  console.log(JSON.stringify({ scope: "api/chat", stage, ...details }))
+}
+
+function validateRequiredEnv() {
+  const missing: string[] = []
+  if (!env.supabaseUrl) missing.push("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
+  if (!env.supabaseServiceRoleKey)
+    missing.push("SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY fallback)")
+  if (!env.groqApiKey) missing.push("GROQ_API_KEY")
+  return missing
+}
+
 async function supabaseRequest(path: string, init: RequestInit = {}) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/${path}`
+  const url = `${env.supabaseUrl}/rest/v1/${path}`
   const headers = {
-    apikey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
+    apikey: env.supabaseServiceRoleKey,
+    Authorization: `Bearer ${env.supabaseServiceRoleKey}`,
     "Content-Type": "application/json",
     ...init.headers,
   }
@@ -42,19 +62,63 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 }
 
 async function retrieveProducts(query: string): Promise<Product[]> {
-  const encoded = encodeURIComponent(query.trim())
+  const cleanQuery = query.trim()
+  // Importante: PostgREST necesita que los términos con espacios o comas 
+  // dentro de un .or() estén envueltos en " "
+  const quotedQuery = `"${cleanQuery}"` 
+  const encoded = encodeURIComponent(quotedQuery)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
-  // Lightweight RAG retrieval using Supabase full-text operators on indexed textual fields.
-  const path = `products?select=${select}&or=(name.fts.${encoded},short_description.fts.${encoded},tags.fts.${encoded})&limit=5`
-  const res = await supabaseRequest(path)
 
-  if (!res.ok) {
-    throw new Error(`Supabase retrieve failed (${res.status})`)
+  // 1) Try full-text search
+  // Usamos .wfts. para búsqueda de frases
+  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=5`
+  const ftsRes = await supabaseRequest(ftsPath)
+
+  if (ftsRes.ok) {
+    const rows = (await ftsRes.json()) as Product[]
+    if (rows.length > 0) return rows.slice(0, 5)
+    logStage("retrieve_fts_empty", { query: cleanQuery })
   }
 
-  const rows = (await res.json()) as Product[]
+  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
+  const normalized = cleanQuery
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, " ")
+
+  const rawTokens = cleanQuery
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3)
+  const normalizedTokens = normalized.split(/\s+/).filter((t) => t.length >= 3)
+  const tokens = Array.from(new Set([...rawTokens, ...normalizedTokens])).slice(0, 8)
+
+  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized].filter((p) => p.length >= 3)))
+  const phraseFilters = phraseCandidates.flatMap((phrase) => {
+    const like = encodeURIComponent(`%${phrase}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+  const tokenFilters = tokens.flatMap((token) => {
+    const like = encodeURIComponent(`%${token}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+
+  const orFilters = [...phraseFilters, ...tokenFilters].join(",")
+  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
+  const ilikeRes = await supabaseRequest(ilikePath)
+
+  if (!ilikeRes.ok) {
+    const ilikeErrorBody = await ilikeRes.text()
+    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
+    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
+  }
+
+  const rows = (await ilikeRes.json()) as Product[]
   return rows.slice(0, 5)
 }
+
 
 async function logEvent(userId: string, eventType: string, payload: Record<string, unknown>) {
   await supabaseRequest("user_events", {
@@ -66,12 +130,16 @@ async function logEvent(userId: string, eventType: string, payload: Record<strin
 
 export async function POST(req: Request) {
   try {
+    const missingEnv = validateRequiredEnv()
+    if (missingEnv.length > 0) {
+      logStage("missing_env", { missingEnv })
+      return NextResponse.json({ error: `Configuración incompleta: ${missingEnv.join(", ")}` }, { status: 500 })
+    }
+
     const body = (await req.json()) as { message?: string; userId?: string }
     const rawQuery = body.message?.trim() ?? ""
 
-    if (!rawQuery) {
-      return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
-    }
+    if (!rawQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
     const userId = body.userId ?? "anonymous"
     const detectedIntent = detectIntent(rawQuery)
@@ -79,50 +147,48 @@ export async function POST(req: Request) {
     let products: Product[] = []
     try {
       products = await retrieveProducts(rawQuery)
-    } catch {
+      logStage("retrieve_ok", { count: products.length, intent: detectedIntent })
+    } catch (error) {
+      logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })
     }
 
     const context = buildContext(products)
-    const noProductsGuidance =
-      "No matching products were found. Ask a concise clarification about budget, use case, preferred category, and project type."
-
     let explanation = ""
+
     if (products.length === 0) {
       explanation =
         "No encontré productos exactos todavía. ¿Cuál es tu presupuesto, uso principal, categoría preferida y tipo de proyecto?"
     } else {
-      const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          Authorization: `Bearer ${env.groqApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: env.groqModel,
           temperature: 0.2,
           max_tokens: 220,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
-              content: `User query: ${rawQuery}\n\nProduct context:\n${context || noProductsGuidance}\n\nRules: never invent products; only use product IDs from context. Keep it concise and sales-oriented.`,
+              content: `User query: ${rawQuery}\n\nProduct context:\n${context}\n\nRules: never invent products; only use product IDs from context. Keep it concise and sales-oriented.`,
             },
           ],
         }),
       })
 
       if (!aiRes.ok) {
+        const responseText = await aiRes.text()
+        logStage("groq_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
         return NextResponse.json({ error: "No fue posible generar respuesta de IA" }, { status: 502 })
       }
 
-      const aiJson = (await aiRes.json()) as {
-        choices?: Array<{ message?: { content?: string } }>
-      }
+      const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
       explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
-      if (!explanation) {
-        explanation = "Encontré productos relevantes. ¿Quieres que te recomiende por presupuesto o por tipo de proyecto?"
-      }
+      if (!explanation) explanation = "Encontré productos relevantes. ¿Quieres que te recomiende por presupuesto o por tipo de proyecto?"
     }
 
     const recommendedProducts = products.map((p) => ({
@@ -156,12 +222,9 @@ export async function POST(req: Request) {
       recommended_count: recommendedProducts.length,
     })
 
-    return NextResponse.json({
-      intent: detectedIntent,
-      response: explanation,
-      products: recommendedProducts,
-    })
-  } catch {
+    return NextResponse.json({ intent: detectedIntent, response: explanation, products: recommendedProducts })
+  } catch (error) {
+    logStage("unhandled_exception", { message: error instanceof Error ? error.message : "unknown" })
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
   }
 }

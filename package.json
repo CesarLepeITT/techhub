@@ -6,7 +6,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+<<<<<<< HEAD
     "dev": "next dev -p 2006"
+=======
+    "rag:eval": "node scripts/rag-eval.mjs"
+>>>>>>> 0286da2e06eb24dc23c2c5d03c97982f4888473a
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
