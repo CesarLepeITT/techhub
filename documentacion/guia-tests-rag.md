@@ -26,7 +26,7 @@ El comando `pnpm rag:eval` ejecuta `scripts/rag-eval.mjs` contra `POST /api/chat
 ## 2) Prerrequisitos
 
 - App corriendo localmente (por defecto en `http://localhost:3000`).
-- Variables de entorno listas (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, etc.).
+- Variables de entorno listas (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GROQ_API_KEY`, etc.).
 - Datos en `products` (si no hay catálogo, no habrá señal útil en relevancia).
 
 ---
@@ -105,8 +105,10 @@ Interpretación rápida:
 La ruta `app/api/chat/route.ts` es el punto principal. Cambios típicos y su efecto:
 
 1. **Top-K retrieval (`limit`)**
+   - Configuración actual: máximo `5` resultados.
    - Más alto: mayor recall, más tokens, más latencia.
    - Más bajo: menor costo/latencia, riesgo de perder opciones.
+   - Recomendación: permitir devolver menos de 5 cuando la señal semántica sea débil (evitar “relleno”).
 
 2. **Query FTS (campos y operadores)**
    - Ajustar `name`, `short_description`, `tags` mejora precisión temática.
@@ -153,6 +155,7 @@ Si quieres más control sin complicar arquitectura:
 - Separar suites: humo (5 queries) vs completa (20+).
 - Medir `% de respuestas con precio` y `% de urgencia correcta` por corrida.
 - Agregar casos “no match” para validar preguntas de clarificación (presupuesto, uso, categoría, tipo de proyecto).
+- Agregar casos de prompt conversacional/vago (ej. “Estoy desarrollando un proyecto de IoT...”) para validar flexibilidad del retrieval.
 
 ---
 
@@ -174,3 +177,4 @@ Si quieres más control sin complicar arquitectura:
 - Script: `scripts/rag-eval.mjs`
 - Resumen técnico: `documentacion/rag-evaluation.md`
 - API evaluada: `app/api/chat/route.ts`
+- Guía de prompts flexibles: `documentacion/rag-flexible-prompts.md`

@@ -16,8 +16,8 @@ const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
-  xaiApiKey: process.env.XAI_API_KEY ?? "",
-  xaiModel: process.env.XAI_MODEL ?? "grok-3-mini",
+  groqApiKey: process.env.GROQ_API_KEY ?? "",
+  groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
 }
 
 function detectIntent(query: string): string {
@@ -26,6 +26,38 @@ function detectIntent(query: string): string {
   if (/(precio|barato|budget|presupuesto)/.test(lower)) return "budget"
   if (/(sensor|arduino|raspberry|iot|robot|automat)/.test(lower)) return "component_search"
   return "general_shopping"
+}
+
+const STOPWORDS = new Set([
+  "de", "la", "el", "los", "las", "un", "una", "unos", "unas", "y", "o", "para", "por", "con", "sin", "del",
+  "al", "que", "me", "mi", "mis", "tu", "tus", "su", "sus", "en", "a", "es", "son", "como", "qué", "quiero",
+  "necesito", "estoy", "desarrollando", "proyecto", "the", "and", "or", "for", "with", "without", "to", "of",
+  "in", "on", "is", "are", "i", "you", "my", "your", "a", "an",
+])
+
+function extractSearchTerms(query: string) {
+  const normalized = query
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+
+  const tokens = normalized
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
+
+  const keywordBoosts: Record<string, string[]> = {
+    iot: ["iot", "sensor", "arduino", "raspberry", "microcontrolador", "microcontroller", "esp32"],
+    component_search: ["modulo", "sensor", "placa", "arduino", "raspberry", "esp32"],
+    budget: ["economico", "barato", "budget", "precio"],
+  }
+
+  const intent = detectIntent(normalized)
+  const boosted = keywordBoosts[intent] ?? []
+  const mergedTokens = Array.from(new Set([...tokens, ...boosted])).slice(0, 10)
+  const phrase = mergedTokens.slice(0, 5).join(" ")
+
+  return { normalized, tokens: mergedTokens, phrase }
 }
 
 function buildContext(products: Product[]): string {
@@ -46,7 +78,7 @@ function validateRequiredEnv() {
   if (!env.supabaseUrl) missing.push("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
   if (!env.supabaseServiceRoleKey)
     missing.push("SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY fallback)")
-  if (!env.xaiApiKey) missing.push("XAI_API_KEY")
+  if (!env.groqApiKey) missing.push("GROQ_API_KEY")
   return missing
 }
 
@@ -62,6 +94,7 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 }
 
 async function retrieveProducts(query: string): Promise<Product[]> {
+  const MAX_RESULTS = 5
   const cleanQuery = query.trim()
   // Importante: PostgREST necesita que los términos con espacios o comas 
   // dentro de un .or() estén envueltos en " "
@@ -71,31 +104,23 @@ async function retrieveProducts(query: string): Promise<Product[]> {
 
   // 1) Try full-text search
   // Usamos .wfts. para búsqueda de frases
-  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=5`
+  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=${MAX_RESULTS}`
   const ftsRes = await supabaseRequest(ftsPath)
 
   if (ftsRes.ok) {
     const rows = (await ftsRes.json()) as Product[]
-    if (rows.length > 0) return rows.slice(0, 5)
+    if (rows.length > 0) return rows.slice(0, MAX_RESULTS)
     logStage("retrieve_fts_empty", { query: cleanQuery })
   }
 
   // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
-  const normalized = cleanQuery
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s]/g, " ")
+  const { normalized, tokens, phrase } = extractSearchTerms(cleanQuery)
+  if (tokens.length === 0) {
+    logStage("retrieve_no_meaningful_terms", { query: cleanQuery })
+    return []
+  }
 
-  const rawTokens = cleanQuery
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 3)
-  const normalizedTokens = normalized.split(/\s+/).filter((t) => t.length >= 3)
-  const tokens = Array.from(new Set([...rawTokens, ...normalizedTokens])).slice(0, 8)
-
-  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized].filter((p) => p.length >= 3)))
+  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized, phrase].filter((p) => p.length >= 3)))
   const phraseFilters = phraseCandidates.flatMap((phrase) => {
     const like = encodeURIComponent(`%${phrase}%`)
     return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
@@ -105,23 +130,8 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
   })
 
-  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
-  const normalized = cleanQuery
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s]/g, " ")
-
-  const tokens = Array.from(new Set(normalized.split(/\s+/).filter((t) => t.length >= 3))).slice(0, 5)
-
-  const phraseLike = encodeURIComponent(`%${normalized}%`)
-  const tokenFilters = tokens.flatMap((token) => {
-    const like = encodeURIComponent(`%${token}%`)
-    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
-  })
-
-  const orFilters = [`name.ilike.${phraseLike}`, `short_description.ilike.${phraseLike}`, `tags.ilike.${phraseLike}`, ...tokenFilters].join(",")
-  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
+  const orFilters = [...phraseFilters, ...tokenFilters].join(",")
+  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=${MAX_RESULTS}`
   const ilikeRes = await supabaseRequest(ilikePath)
 
   if (!ilikeRes.ok) {
@@ -131,7 +141,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   }
 
   const rows = (await ilikeRes.json()) as Product[]
-  return rows.slice(0, 5)
+  return rows.slice(0, MAX_RESULTS)
 }
 
 
@@ -175,14 +185,14 @@ export async function POST(req: Request) {
       explanation =
         "No encontré productos exactos todavía. ¿Cuál es tu presupuesto, uso principal, categoría preferida y tipo de proyecto?"
     } else {
-      const aiRes = await fetch("https://api.x.ai/v1/chat/completions", {
+      const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.xaiApiKey}`,
+          Authorization: `Bearer ${env.groqApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: env.xaiModel,
+          model: env.groqModel,
           temperature: 0.2,
           max_tokens: 220,
           messages: [
@@ -197,7 +207,7 @@ export async function POST(req: Request) {
 
       if (!aiRes.ok) {
         const responseText = await aiRes.text()
-        logStage("xai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
+        logStage("groq_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
         return NextResponse.json({ error: "No fue posible generar respuesta de IA" }, { status: 502 })
       }
 
