@@ -10,10 +10,10 @@ type Product = {
 }
 
 const SYSTEM_PROMPT =
-  "You are the TechHub. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency."
+  "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency. Keep responses concise."
 
 const env = {
-  supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
@@ -43,9 +43,8 @@ function logStage(stage: string, details: Record<string, unknown>) {
 
 function validateRequiredEnv() {
   const missing: string[] = []
-  if (!env.supabaseUrl) missing.push("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
-  if (!env.supabaseServiceRoleKey)
-    missing.push("SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY fallback)")
+  if (!env.supabaseUrl) missing.push("NEXT_PUBLIC_SUPABASE_URL")
+  if (!env.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY")
   if (!env.groqApiKey) missing.push("GROQ_API_KEY")
   return missing
 }
@@ -63,69 +62,42 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 
 async function retrieveProducts(query: string): Promise<Product[]> {
   const cleanQuery = query.trim()
-  // Importante: PostgREST necesita que los términos con espacios o comas 
-  // dentro de un .or() estén envueltos en " "
-  const quotedQuery = `"${cleanQuery}"` 
-  const encoded = encodeURIComponent(quotedQuery)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
 
-  // 1) Try full-text search
-  // Usamos .wfts. para búsqueda de frases
-  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=5`
-  const ftsRes = await supabaseRequest(ftsPath)
-
-  if (ftsRes.ok) {
-    const rows = (await ftsRes.json()) as Product[]
-    if (rows.length > 0) return rows.slice(0, 5)
-    logStage("retrieve_fts_empty", { query: cleanQuery })
-  }
-
-  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
-  const normalized = cleanQuery
+  const tokens = cleanQuery
     .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\w\s]/g, " ")
-
-  const rawTokens = cleanQuery
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
-    .filter((t) => t.length >= 3)
-  const normalizedTokens = normalized.split(/\s+/).filter((t) => t.length >= 3)
-  const tokens = Array.from(new Set([...rawTokens, ...normalizedTokens])).slice(0, 8)
+    .filter((t) => t.length >= 2)
+    .slice(0, 2)
 
-  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized].filter((p) => p.length >= 3)))
-  const phraseFilters = phraseCandidates.flatMap((phrase) => {
-    const like = encodeURIComponent(`%${phrase}%`)
-    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
-  })
-  const tokenFilters = tokens.flatMap((token) => {
-    const like = encodeURIComponent(`%${token}%`)
-    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
-  })
-
-  const orFilters = [...phraseFilters, ...tokenFilters].join(",")
-  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
-  const ilikeRes = await supabaseRequest(ilikePath)
-
-  if (!ilikeRes.ok) {
-    const ilikeErrorBody = await ilikeRes.text()
-    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
-    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
+  if (tokens.length === 0) {
+    logStage("retrieve_no_tokens", { query: cleanQuery })
+    return []
   }
 
-  const rows = (await ilikeRes.json()) as Product[]
-  return rows.slice(0, 5)
-}
-
-
-async function logEvent(userId: string, eventType: string, payload: Record<string, unknown>) {
-  await supabaseRequest("user_events", {
-    method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: JSON.stringify([{ user_id: userId, event_type: eventType, payload }]),
+  const filters = tokens.map((token) => {
+    const encoded = encodeURIComponent(`%${token}%`)
+    return `name.ilike.${encoded}`
   })
+
+  const orFilters = filters.join(",")
+  const path = `products?select=${select}&or=(${orFilters})&limit=5&is_active=eq.true`
+
+  try {
+    const res = await supabaseRequest(path)
+    if (!res.ok) {
+      const errorBody = await res.text()
+      logStage("retrieve_failed", { status: res.status, error: errorBody.slice(0, 200) })
+      return []
+    }
+    const rows = (await res.json()) as Product[]
+    logStage("retrieve_ok", { count: rows.length, query: cleanQuery })
+    return rows.slice(0, 5)
+  } catch (error) {
+    logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
+    return []
+  }
 }
 
 export async function POST(req: Request) {
@@ -147,7 +119,6 @@ export async function POST(req: Request) {
     let products: Product[] = []
     try {
       products = await retrieveProducts(rawQuery)
-      logStage("retrieve_ok", { count: products.length, intent: detectedIntent })
     } catch (error) {
       logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })
@@ -158,7 +129,7 @@ export async function POST(req: Request) {
 
     if (products.length === 0) {
       explanation =
-        "No encontré productos exactos todavía. ¿Cuál es tu presupuesto, uso principal, categoría preferida y tipo de proyecto?"
+        "No encontré productos exactos. ¿Cuál es tu presupuesto, tipo de proyecto o categoría preferida?"
     } else {
       const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
@@ -168,13 +139,13 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           model: env.groqModel,
-          temperature: 0.2,
-          max_tokens: 220,
+          temperature: 0.3,
+          max_tokens: 250,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
-              content: `User query: ${rawQuery}\n\nProduct context:\n${context}\n\nRules: never invent products; only use product IDs from context. Keep it concise and sales-oriented.`,
+              content: `User query: ${rawQuery}\n\nProduct context:\n${context}\n\nRecommend products using only the product IDs and info provided. Be concise.`,
             },
           ],
         }),
@@ -182,13 +153,13 @@ export async function POST(req: Request) {
 
       if (!aiRes.ok) {
         const responseText = await aiRes.text()
-        logStage("groq_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
-        return NextResponse.json({ error: "No fue posible generar respuesta de IA" }, { status: 502 })
+        logStage("groq_failed", { status: aiRes.status, error: responseText.slice(0, 200) })
+        explanation = `Encontré ${products.length} producto(s) relevante(s). ¿Quieres más detalles?`
+      } else {
+        const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
+        explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
+        if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
       }
-
-      const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
-      explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
-      if (!explanation) explanation = "Encontré productos relevantes. ¿Quieres que te recomiende por presupuesto o por tipo de proyecto?"
     }
 
     const recommendedProducts = products.map((p) => ({
@@ -215,12 +186,6 @@ export async function POST(req: Request) {
             },
           },
         ]),
-      })
-
-      await logEvent(userId, "assistant_query", {
-        query: rawQuery,
-        intent: detectedIntent,
-        recommended_count: recommendedProducts.length,
       })
     } catch (logError) {
       logStage("logging_failed", { message: logError instanceof Error ? logError.message : "unknown" })
