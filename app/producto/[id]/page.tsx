@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft,
   Share2,
@@ -60,6 +60,7 @@ type Review = {
 
 export default function ProductoPage() {
   const { id } = useParams()
+  const router = useRouter()
   const { user } = useSession()
   const [product, setProduct] = useState<Product | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
@@ -114,13 +115,14 @@ export default function ProductoPage() {
 
   const handleAddToCart = async () => {
     if (!user) {
-      window.location.href = "/iniciar-sesion"
+      router.push("/iniciar-sesion")
       return
     }
 
     try {
       const res = await addToCart(user.id, id as string, quantity)
       if (res.error) throw res.error
+      window.dispatchEvent(new Event("cart-updated"))
       alert("Producto agregado al carrito")
     } catch (err) {
       alert("Error al agregar al carrito")
@@ -130,7 +132,7 @@ export default function ProductoPage() {
 
   const handleWishlist = async () => {
     if (!user) {
-      window.location.href = "/iniciar-sesion"
+      router.push("/iniciar-sesion")
       return
     }
 

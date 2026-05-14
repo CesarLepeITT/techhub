@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import { 
   Play,
   Pause,
@@ -22,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { cn } from "@/lib/utils"
+import { useSession } from "@/components/SessionProvider"
 
 interface TechReel {
   id: string
@@ -165,12 +167,14 @@ function ReelCard({
   reel, 
   isActive, 
   isMuted,
-  onToggleMute 
+  onToggleMute,
+  onRequireAuth,
 }: { 
   reel: TechReel
   isActive: boolean
   isMuted: boolean
   onToggleMute: () => void
+  onRequireAuth: () => boolean
 }) {
   const [isPlaying, setIsPlaying] = useState(true)
   const [isLiked, setIsLiked] = useState(false)
@@ -225,7 +229,10 @@ function ReelCard({
         {/* Like */}
         <button
           className="flex flex-col items-center gap-1"
-          onClick={() => setIsLiked(!isLiked)}
+          onClick={() => {
+            if (!onRequireAuth()) return
+            setIsLiked(!isLiked)
+          }}
         >
           <div className={cn(
             "flex h-12 w-12 items-center justify-center rounded-full transition-colors",
@@ -264,7 +271,10 @@ function ReelCard({
         {/* Cart */}
         <button
           className="flex flex-col items-center gap-1"
-          onClick={() => setIsAddedToCart(!isAddedToCart)}
+          onClick={() => {
+            if (!onRequireAuth()) return
+            setIsAddedToCart(!isAddedToCart)
+          }}
         >
           <div className={cn(
             "flex h-12 w-12 items-center justify-center rounded-full transition-colors",
@@ -308,6 +318,9 @@ function ReelCard({
             size="sm"
             variant="outline"
             className="ml-auto rounded-full border-background/50 bg-transparent text-background hover:bg-background/20"
+            onClick={() => {
+              onRequireAuth()
+            }}
           >
             Seguir
           </Button>
@@ -358,7 +371,13 @@ function ReelCard({
                 )}
               </div>
             </div>
-            <Button size="sm" className="shrink-0 self-center rounded-xl bg-primary hover:bg-primary/90">
+            <Button
+              size="sm"
+              className="shrink-0 self-center rounded-xl bg-primary hover:bg-primary/90"
+              onClick={() => {
+                onRequireAuth()
+              }}
+            >
               <ShoppingCart className="h-4 w-4" />
             </Button>
           </div>
@@ -368,7 +387,7 @@ function ReelCard({
   )
 }
 
-function DesktopProductPanel({ reel }: { reel: TechReel }) {
+function DesktopProductPanel({ reel, onRequireAuth }: { reel: TechReel; onRequireAuth: () => boolean }) {
   const [isAddedToCart, setIsAddedToCart] = useState(false)
 
   return (
@@ -453,7 +472,10 @@ function DesktopProductPanel({ reel }: { reel: TechReel }) {
               ? "bg-primary/10 text-primary hover:bg-primary/20"
               : "bg-primary text-primary-foreground hover:bg-primary/90"
           )}
-          onClick={() => setIsAddedToCart(!isAddedToCart)}
+          onClick={() => {
+            if (!onRequireAuth()) return
+            setIsAddedToCart(!isAddedToCart)
+          }}
         >
           {isAddedToCart ? (
             <>
@@ -477,6 +499,8 @@ function DesktopProductPanel({ reel }: { reel: TechReel }) {
 }
 
 export default function ReelsPage() {
+  const router = useRouter()
+  const { user } = useSession()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isMuted, setIsMuted] = useState(true)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -505,6 +529,15 @@ export default function ReelsPage() {
   }, [currentIndex])
 
   const currentReel = reels[currentIndex]
+
+  const requireAuth = () => {
+    if (!user) {
+      router.push("/iniciar-sesion")
+      return false
+    }
+
+    return true
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -562,6 +595,7 @@ export default function ReelsPage() {
               isActive={true}
               isMuted={isMuted}
               onToggleMute={() => setIsMuted(!isMuted)}
+              onRequireAuth={requireAuth}
             />
             
             {/* Navigation buttons */}
@@ -616,6 +650,7 @@ export default function ReelsPage() {
                     isActive={true}
                     isMuted={isMuted}
                     onToggleMute={() => setIsMuted(!isMuted)}
+                    onRequireAuth={requireAuth}
                   />
                 </div>
                 {/* Notch */}
@@ -657,7 +692,7 @@ export default function ReelsPage() {
 
             {/* Product Details Panel */}
             <div className="h-[680px] w-[min(24rem,32vw)] min-w-[20rem] overflow-hidden rounded-xl bg-card shadow-soft">
-              <DesktopProductPanel reel={currentReel} />
+              <DesktopProductPanel reel={currentReel} onRequireAuth={requireAuth} />
             </div>
           </div>
         </div>

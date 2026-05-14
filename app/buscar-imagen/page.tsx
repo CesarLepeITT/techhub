@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState } from "react"
 import Link from "next/link"
@@ -62,7 +62,7 @@ export default function BuscarImagenPage() {
     },
     {
       id: 4,
-      name: "Laptop Ultraportátil",
+      name: "Laptop UltraportÃ¡til",
       image: "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=300&h=300&fit=crop",
       price: 1299.99,
       seller: "TechWorld",
@@ -76,7 +76,7 @@ export default function BuscarImagenPage() {
     if (!file) return
 
     if (!file.type.startsWith("image/")) {
-      setUploadError("Por favor sube un archivo de imagen válido")
+      setUploadError("Por favor sube un archivo de imagen vÃ¡lido")
       return
     }
 
@@ -122,7 +122,7 @@ export default function BuscarImagenPage() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
                 <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="text-lg font-semibold text-foreground">TechMarket</span>
+              <span className="text-lg font-semibold text-foreground">techHub</span>
             </Link>
             <Link href="/">
               <Button variant="ghost" className="rounded-lg cursor-pointer">
@@ -141,7 +141,7 @@ export default function BuscarImagenPage() {
             Buscar por imagen
           </h1>
           <p className="text-muted-foreground">
-            Sube una foto y encontraremos productos similares en nuestro catálogo
+            Sube una foto y encontraremos productos similares en nuestro catÃ¡logo
           </p>
         </div>
 
@@ -157,7 +157,7 @@ export default function BuscarImagenPage() {
                   <label className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-secondary/30 p-8 text-center cursor-pointer transition-colors hover:border-primary/50 hover:bg-secondary/50">
                     <Upload className="mb-3 h-8 w-8 text-muted-foreground" />
                     <p className="mb-1 text-sm font-medium text-foreground">
-                      Arrastra tu imagen aquí
+                      Arrastra tu imagen aquÃ­
                     </p>
                     <p className="text-xs text-muted-foreground">
                       o haz clic para seleccionar
@@ -180,7 +180,7 @@ export default function BuscarImagenPage() {
                       onClick={handleRemoveImage}
                       className="absolute top-2 right-2 rounded-full bg-destructive/90 p-2 text-white hover:bg-destructive transition-colors cursor-pointer"
                     >
-                      ✕
+                      âœ•
                     </button>
                   </div>
                 )}
@@ -215,10 +215,10 @@ export default function BuscarImagenPage() {
               <div className="mt-6 space-y-3 rounded-lg bg-secondary/30 p-4">
                 <h3 className="text-sm font-medium text-foreground">Consejos para mejores resultados:</h3>
                 <ul className="space-y-2 text-xs text-muted-foreground">
-                  <li>• Usa imágenes claras y bien iluminadas</li>
-                  <li>• Asegúrate de que el producto sea el enfoque principal</li>
-                  <li>• Evita imágenes borrosas o pixeladas</li>
-                  <li>• Formatos: JPG, PNG, WEBP (máx 10MB)</li>
+                  <li>â€¢ Usa imÃ¡genes claras y bien iluminadas</li>
+                  <li>â€¢ AsegÃºrate de que el producto sea el enfoque principal</li>
+                  <li>â€¢ Evita imÃ¡genes borrosas o pixeladas</li>
+                  <li>â€¢ Formatos: JPG, PNG, WEBP (mÃ¡x 10MB)</li>
                 </ul>
               </div>
             </div>
@@ -337,7 +337,7 @@ export default function BuscarImagenPage() {
               <div className="rounded-xl border border-dashed border-border bg-secondary/20 p-12 text-center">
                 <ImageIcon className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
                 <p className="text-muted-foreground">
-                  Sube una imagen en el panel izquierdo para comenzar la búsqueda
+                  Sube una imagen en el panel izquierdo para comenzar la bÃºsqueda
                 </p>
               </div>
             )}
@@ -347,3 +347,4 @@ export default function BuscarImagenPage() {
     </div>
   )
 }
+

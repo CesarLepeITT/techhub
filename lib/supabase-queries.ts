@@ -136,7 +136,8 @@ export async function getProducts(limit = 20, offset = 0) {
       stock,
       avg_rating,
       review_count,
-      sellers(store_name)
+      sellers(store_name),
+      categories(id, name, slug)
       `,
       { count: "exact" }
     )

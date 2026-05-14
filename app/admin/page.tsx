@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState } from "react"
 import Link from "next/link"
@@ -67,7 +67,7 @@ export default function AdminPage() {
       color: "bg-green-100 text-green-600",
     },
     {
-      label: "Órdenes",
+      label: "Ã“rdenes",
       value: "1,234",
       change: "+8.2%",
       trend: "up",
@@ -113,8 +113,8 @@ export default function AdminPage() {
     },
     {
       id: 3,
-      name: "Teclado Mecánico RGB",
-      category: "Periféricos",
+      name: "Teclado MecÃ¡nico RGB",
+      category: "PerifÃ©ricos",
       price: 149.99,
       stock: 5,
       sales: 128,
@@ -134,7 +134,7 @@ export default function AdminPage() {
     {
       id: "2",
       number: "ORD-2024-002",
-      customer: "María García",
+      customer: "MarÃ­a GarcÃ­a",
       total: 899.99,
       status: "processing",
       date: "2024-12-02",
@@ -142,7 +142,7 @@ export default function AdminPage() {
     {
       id: "3",
       number: "ORD-2024-003",
-      customer: "Juan López",
+      customer: "Juan LÃ³pez",
       total: 1299.99,
       status: "delivered",
       date: "2024-11-30",
@@ -168,7 +168,7 @@ export default function AdminPage() {
     },
     {
       id: 3,
-      name: "María García",
+      name: "MarÃ­a GarcÃ­a",
       email: "maria@example.com",
       type: "buyer",
       joinDate: "2024-08-10",
@@ -206,7 +206,7 @@ export default function AdminPage() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
                 <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="text-lg font-semibold text-foreground">TechMarket</span>
+              <span className="text-lg font-semibold text-foreground">techHub</span>
             </Link>
             <Link href="/">
               <Button variant="ghost" className="rounded-lg cursor-pointer">
@@ -222,7 +222,7 @@ export default function AdminPage() {
         {/* Title */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground">Panel Administrativo</h1>
-          <p className="text-muted-foreground">Gestiona tu tienda, productos, órdenes y usuarios</p>
+          <p className="text-muted-foreground">Gestiona tu tienda, productos, Ã³rdenes y usuarios</p>
         </div>
 
         {/* Stats Grid */}
@@ -266,7 +266,7 @@ export default function AdminPage() {
               >
                 {tab === "overview" && "Resumen"}
                 {tab === "products" && "Productos"}
-                {tab === "orders" && "Órdenes"}
+                {tab === "orders" && "Ã“rdenes"}
                 {tab === "users" && "Usuarios"}
               </button>
             ))}
@@ -279,7 +279,7 @@ export default function AdminPage() {
             {/* Recent Orders */}
             <div className="lg:col-span-2 rounded-xl border border-border bg-card p-6 shadow-soft">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-foreground">Órdenes recientes</h2>
+                <h2 className="text-lg font-semibold text-foreground">Ã“rdenes recientes</h2>
                 <Link href="#" className="text-sm text-primary hover:underline">Ver todas</Link>
               </div>
               <div className="space-y-4">
@@ -316,10 +316,10 @@ export default function AdminPage() {
               <div className="rounded-xl border border-border bg-card p-6 shadow-soft">
                 <div className="mb-2 flex items-center justify-between">
                   <ShoppingCart className="h-5 w-5 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">Órdenes pendientes</p>
+                  <p className="text-xs text-muted-foreground">Ã“rdenes pendientes</p>
                 </div>
                 <p className="text-2xl font-bold text-foreground">24</p>
-                <p className="mt-1 text-sm text-muted-foreground">Requieren atención</p>
+                <p className="mt-1 text-sm text-muted-foreground">Requieren atenciÃ³n</p>
               </div>
 
               <div className="rounded-xl border border-border bg-card p-6 shadow-soft">
@@ -361,7 +361,7 @@ export default function AdminPage() {
                 <thead className="border-b border-border bg-secondary/30">
                   <tr>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Producto</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Categoría</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">CategorÃ­a</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Precio</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Stock</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Ventas</th>
@@ -418,7 +418,7 @@ export default function AdminPage() {
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="text"
-                    placeholder="Buscar órdenes..."
+                    placeholder="Buscar Ã³rdenes..."
                     className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
                   />
                 </div>
@@ -493,8 +493,8 @@ export default function AdminPage() {
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Usuario</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Email</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Tipo</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Se unió</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Órdenes</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Se uniÃ³</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Ã“rdenes</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-foreground">Acciones</th>
                   </tr>
                 </thead>
@@ -528,3 +528,4 @@ export default function AdminPage() {
     </div>
   )
 }
+

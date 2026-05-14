@@ -73,6 +73,7 @@ export default function CarritoPage() {
           item.id === cartItemId ? { ...item, quantity: newQuantity } : item
         )
       )
+      window.dispatchEvent(new Event("cart-updated"))
     } catch (err) {
       console.error(err)
     }
@@ -83,6 +84,7 @@ export default function CarritoPage() {
       const res = await removeFromCart(cartItemId)
       if (res.error) throw res.error
       setCartItems(cartItems.filter((item) => item.id !== cartItemId))
+      window.dispatchEvent(new Event("cart-updated"))
     } catch (err) {
       console.error(err)
     }
@@ -94,6 +96,7 @@ export default function CarritoPage() {
       const res = await clearCart(user.id)
       if (res.error) throw res.error
       setCartItems([])
+      window.dispatchEvent(new Event("cart-updated"))
     } catch (err) {
       console.error(err)
     }

@@ -8,7 +8,7 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'TechMarket Tijuana - Tecnología y Electrónica para Makers',
+  title: 'techHub - Tecnología y Electrónica para Makers',
   description: 'Compra hardware, kits, refacciones y accesorios tech con recomendaciones inteligentes, mayoreo y entrega local en Tijuana.',
   generator: 'v0.app',
   icons: {

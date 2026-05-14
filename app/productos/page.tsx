@@ -1,7 +1,8 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   Search,
   SlidersHorizontal,
@@ -18,7 +19,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
-import { getProducts, getCategories } from "@/lib/supabase-queries"
+import { addToCart, addToWishlist, getProducts, getCategories, isInWishlist, removeFromWishlist } from "@/lib/supabase-queries"
+import { useSession } from "@/components/SessionProvider"
 
 type Product = {
   id: string
@@ -41,9 +43,12 @@ type Category = {
 }
 
 export default function ProductosPage() {
+  const router = useRouter()
+  const { user } = useSession()
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [wishlistIds, setWishlistIds] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
@@ -55,6 +60,28 @@ export default function ProductosPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  useEffect(() => {
+    const loadWishlist = async () => {
+      if (!user) {
+        setWishlistIds([])
+        return
+      }
+
+      const results = await Promise.all(
+        allProducts.map(async (product) => {
+          const response = await isInWishlist(user.id, product.id)
+          return response.exists ? product.id : null
+        })
+      )
+
+      setWishlistIds(results.filter((value): value is string => !!value))
+    }
+
+    if (allProducts.length > 0) {
+      void loadWishlist()
+    }
+  }, [allProducts, user])
 
   useEffect(() => {
     let filteredProducts = [...allProducts]
@@ -113,6 +140,36 @@ export default function ProductosPage() {
     }
   }
 
+  const requireSession = () => {
+    if (!user) {
+      router.push("/iniciar-sesion")
+      return false
+    }
+
+    return true
+  }
+
+  const handleAddToCart = async (productId: string) => {
+    if (!requireSession()) return
+    const response = await addToCart(user!.id, productId, 1)
+    if (!response.error) {
+      window.dispatchEvent(new Event("cart-updated"))
+    }
+  }
+
+  const handleWishlistToggle = async (productId: string) => {
+    if (!requireSession()) return
+
+    if (wishlistIds.includes(productId)) {
+      await removeFromWishlist(user!.id, productId)
+      setWishlistIds((current) => current.filter((id) => id !== productId))
+      return
+    }
+
+    await addToWishlist(user!.id, productId)
+    setWishlistIds((current) => [...current, productId])
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
@@ -121,7 +178,7 @@ export default function ProductosPage() {
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground">Catálogo de Productos</h1>
+            <h1 className="text-3xl font-bold text-foreground">CatÃ¡logo de Productos</h1>
             <p className="mt-2 text-muted-foreground">Explora nuestros productos disponibles</p>
           </div>
 
@@ -164,7 +221,7 @@ export default function ProductosPage() {
 
                 {/* Categories */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-foreground">Categorías</h4>
+                  <h4 className="text-sm font-medium text-foreground">CategorÃ­as</h4>
                   <div className="space-y-2">
                     <button
                       onClick={() => setSelectedCategory("all")}
@@ -203,8 +260,8 @@ export default function ProductosPage() {
                     <option value="relevance">Relevancia</option>
                     <option value="price-asc">Precio: Menor a Mayor</option>
                     <option value="price-desc">Precio: Mayor a Menor</option>
-                    <option value="rating">Mejor Calificación</option>
-                    <option value="newest">Más Recientes</option>
+                    <option value="rating">Mejor CalificaciÃ³n</option>
+                    <option value="newest">MÃ¡s Recientes</option>
                   </select>
                 </div>
               </div>
@@ -272,7 +329,7 @@ export default function ProductosPage() {
                         />
                       </div>
                       <div className="p-4">
-                        <p className="text-xs text-muted-foreground">{product.sellers?.store_name || "TechMarket"}</p>
+                        <p className="text-xs text-muted-foreground">{product.sellers?.store_name || "techHub"}</p>
                         <h3 className="mb-2 text-sm font-semibold text-foreground line-clamp-2 group-hover:text-primary transition-colors">
                           {product.name}
                         </h3>
@@ -283,12 +340,25 @@ export default function ProductosPage() {
                         </div>
                         <p className="mb-3 text-lg font-bold text-primary">${product.price.toFixed(2)}</p>
                         <div className="flex gap-2">
-                          <Button className="flex-1 rounded-lg bg-primary hover:bg-primary/90 cursor-pointer text-sm">
+                          <Button
+                            className="flex-1 rounded-lg bg-primary hover:bg-primary/90 cursor-pointer text-sm"
+                            onClick={(event) => {
+                              event.preventDefault()
+                              void handleAddToCart(product.id)
+                            }}
+                          >
                             <ShoppingCart className="mr-1 h-4 w-4" />
                             Agregar
                           </Button>
-                          <Button variant="outline" className="rounded-lg cursor-pointer">
-                            <Heart className="h-4 w-4" />
+                          <Button
+                            variant="outline"
+                            className="rounded-lg cursor-pointer"
+                            onClick={(event) => {
+                              event.preventDefault()
+                              void handleWishlistToggle(product.id)
+                            }}
+                          >
+                            <Heart className={`h-4 w-4 ${wishlistIds.includes(product.id) ? "fill-current" : ""}`} />
                           </Button>
                         </div>
                       </div>
@@ -311,7 +381,7 @@ export default function ProductosPage() {
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-muted-foreground">{product.sellers?.store_name || "TechMarket"}</p>
+                        <p className="text-xs text-muted-foreground">{product.sellers?.store_name || "techHub"}</p>
                         <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2">
                           {product.name}
                         </h3>
@@ -323,10 +393,23 @@ export default function ProductosPage() {
                         <p className="text-lg font-bold text-primary">${product.price.toFixed(2)}</p>
                       </div>
                       <div className="flex flex-col items-end justify-between">
-                        <Button variant="outline" className="rounded-lg cursor-pointer">
-                          <Heart className="h-4 w-4" />
+                        <Button
+                          variant="outline"
+                          className="rounded-lg cursor-pointer"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            void handleWishlistToggle(product.id)
+                          }}
+                        >
+                          <Heart className={`h-4 w-4 ${wishlistIds.includes(product.id) ? "fill-current" : ""}`} />
                         </Button>
-                        <Button className="rounded-lg bg-primary hover:bg-primary/90 cursor-pointer">
+                        <Button
+                          className="rounded-lg bg-primary hover:bg-primary/90 cursor-pointer"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            void handleAddToCart(product.id)
+                          }}
+                        >
                           <ShoppingCart className="h-4 w-4" />
                         </Button>
                       </div>
@@ -343,3 +426,4 @@ export default function ProductosPage() {
     </div>
   )
 }
+

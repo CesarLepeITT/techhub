@@ -20,11 +20,17 @@ import {
   Check,
   Eye,
   Loader,
+  Heart,
+  Trash2,
+  UserCircle,
+  ShoppingCart,
+  Minus,
+  Plus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
-import { getUserOrders } from "@/lib/supabase-queries"
+import { getUserOrders, getCart, removeFromCart, updateCartQuantity, getWishlist, removeFromWishlist } from "@/lib/supabase-queries"
 import { useSession } from "@/components/SessionProvider"
 
 type Order = {
@@ -41,7 +47,18 @@ type Order = {
   }>
 }
 
-type TabType = "overview" | "orders" | "settings"
+type CartItem = {
+  id: string
+  quantity: number
+  products: { id: string; name: string; image_url: string; price: number }
+}
+
+type WishlistItem = {
+  id: string
+  products: { id: string; name: string; image_url: string; price: number }
+}
+
+type TabType = "overview" | "orders" | "settings" | "carrito" | "wishlist"
 
 export default function PerfilPage() {
   const router = useRouter()
@@ -50,6 +67,10 @@ export default function PerfilPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoadingOrders, setIsLoadingOrders] = useState(false)
+  const [cartItems, setCartItems] = useState<CartItem[]>([])
+  const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([])
+  const [isLoadingCart, setIsLoadingCart] = useState(false)
+  const [isLoadingWishlist, setIsLoadingWishlist] = useState(false)
   const [userData, setUserData] = useState({
     nombre: "",
     email: "",
@@ -75,6 +96,8 @@ export default function PerfilPage() {
         ubicacion: "",
       })
       loadOrders()
+      loadCart()
+      loadWishlist()
     }
   }, [user, authLoading])
 
@@ -89,6 +112,68 @@ export default function PerfilPage() {
       console.error("Error loading orders:", err)
     } finally {
       setIsLoadingOrders(false)
+    }
+  }
+
+  const loadCart = async () => {
+    if (!user) return
+    setIsLoadingCart(true)
+    try {
+      const res = await getCart(user.id)
+      if (res.error) throw res.error
+      setCartItems(res.data || [])
+    } catch (err) {
+      console.error("Error loading cart:", err)
+    } finally {
+      setIsLoadingCart(false)
+    }
+  }
+
+  const loadWishlist = async () => {
+    if (!user) return
+    setIsLoadingWishlist(true)
+    try {
+      const res = await getWishlist(user.id)
+      if (res.error) throw res.error
+      setWishlistItems(res.data || [])
+    } catch (err) {
+      console.error("Error loading wishlist:", err)
+    } finally {
+      setIsLoadingWishlist(false)
+    }
+  }
+
+  const handleRemoveFromCart = async (cartId: string) => {
+    if (!user) return
+    try {
+      await removeFromCart(user.id, cartId)
+      setCartItems((prev) => prev.filter((item) => item.id !== cartId))
+    } catch (err) {
+      console.error("Error removing from cart:", err)
+    }
+  }
+
+  const handleUpdateCartQuantity = async (cartId: string, newQuantity: number) => {
+    if (!user || newQuantity < 1) return
+    try {
+      await updateCartQuantity(user.id, cartId, newQuantity)
+      setCartItems((prev) =>
+        prev.map((item) =>
+          item.id === cartId ? { ...item, quantity: newQuantity } : item
+        )
+      )
+    } catch (err) {
+      console.error("Error updating quantity:", err)
+    }
+  }
+
+  const handleRemoveFromWishlist = async (wishlistId: string) => {
+    if (!user) return
+    try {
+      await removeFromWishlist(user.id, wishlistId)
+      setWishlistItems((prev) => prev.filter((item) => item.id !== wishlistId))
+    } catch (err) {
+      console.error("Error removing from wishlist:", err)
     }
   }
 
@@ -157,11 +242,11 @@ export default function PerfilPage() {
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <User className="h-8 w-8" />
+                <UserCircle className="h-8 w-8" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">{userData.nombre}</h1>
-                <p className="text-sm text-muted-foreground">Cliente desde 2024</p>
+                <p className="text-sm text-muted-foreground">{userData.email}</p>
               </div>
             </div>
             <Button
@@ -177,10 +262,10 @@ export default function PerfilPage() {
 
         {/* Tabs */}
         <div className="mb-6 border-b border-border">
-          <div className="flex gap-8">
+          <div className="flex gap-8 overflow-x-auto">
             <button
               onClick={() => setActiveTab("overview")}
-              className={`pb-4 text-sm font-medium transition-colors cursor-pointer ${
+              className={`pb-4 text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 activeTab === "overview"
                   ? "border-b-2 border-primary text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -189,8 +274,28 @@ export default function PerfilPage() {
               Información
             </button>
             <button
+              onClick={() => setActiveTab("carrito")}
+              className={`pb-4 text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === "carrito"
+                  ? "border-b-2 border-primary text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Carrito
+            </button>
+            <button
+              onClick={() => setActiveTab("wishlist")}
+              className={`pb-4 text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === "wishlist"
+                  ? "border-b-2 border-primary text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Wishlist
+            </button>
+            <button
               onClick={() => setActiveTab("orders")}
-              className={`pb-4 text-sm font-medium transition-colors cursor-pointer ${
+              className={`pb-4 text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 activeTab === "orders"
                   ? "border-b-2 border-primary text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -200,7 +305,7 @@ export default function PerfilPage() {
             </button>
             <button
               onClick={() => setActiveTab("settings")}
-              className={`pb-4 text-sm font-medium transition-colors cursor-pointer ${
+              className={`pb-4 text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 activeTab === "settings"
                   ? "border-b-2 border-primary text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -379,6 +484,133 @@ export default function PerfilPage() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {/* Cart Tab */}
+        {activeTab === "carrito" && (
+          <div className="space-y-4">
+            {isLoadingCart ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : cartItems.length === 0 ? (
+              <div className="rounded-xl border border-border bg-card p-8 text-center shadow-soft">
+                <ShoppingCart className="mx-auto mb-4 h-8 w-8 text-muted-foreground" />
+                <p className="text-muted-foreground">Tu carrito está vacío</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {cartItems.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-border bg-card p-4 shadow-soft">
+                      <div className="flex gap-4">
+                        <img
+                          src={item.products?.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=80&h=80&fit=crop"}
+                          alt={item.products?.name}
+                          className="h-20 w-20 rounded-lg object-cover bg-secondary"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <Link href={`/producto/${item.products?.id}`}>
+                            <h3 className="font-semibold text-foreground hover:text-primary transition-colors cursor-pointer line-clamp-2">
+                              {item.products?.name}
+                            </h3>
+                          </Link>
+                          <p className="text-lg font-bold text-primary mt-1">${(item.products?.price || 0).toFixed(2)}</p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <button
+                              onClick={() => handleUpdateCartQuantity(item.id, item.quantity - 1)}
+                              className="rounded p-1 hover:bg-secondary transition-colors cursor-pointer"
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <span className="w-6 text-center font-medium">{item.quantity}</span>
+                            <button
+                              onClick={() => handleUpdateCartQuantity(item.id, item.quantity + 1)}
+                              className="rounded p-1 hover:bg-secondary transition-colors cursor-pointer"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveFromCart(item.id)}
+                              className="ml-auto text-destructive hover:bg-destructive/10 rounded p-1 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-foreground">Subtotal:</p>
+                    <p className="text-lg font-bold text-primary">
+                      ${cartItems.reduce((sum, item) => sum + (item.products?.price || 0) * item.quantity, 0).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                <Link href="/carrito">
+                  <Button className="w-full rounded-lg bg-primary hover:bg-primary/90 cursor-pointer">
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Ir al carrito completo
+                  </Button>
+                </Link>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Wishlist Tab */}
+        {activeTab === "wishlist" && (
+          <div className="space-y-4">
+            {isLoadingWishlist ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : wishlistItems.length === 0 ? (
+              <div className="rounded-xl border border-border bg-card p-8 text-center shadow-soft">
+                <Heart className="mx-auto mb-4 h-8 w-8 text-muted-foreground" />
+                <p className="text-muted-foreground">Tu wishlist está vacía</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {wishlistItems.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-border bg-card overflow-hidden shadow-soft hover:shadow-elevated transition-all">
+                    <div className="relative h-32 overflow-hidden bg-secondary">
+                      <img
+                        src={item.products?.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=200&h=200&fit=crop"}
+                        alt={item.products?.name}
+                        className="h-full w-full object-cover group-hover:scale-110 transition-transform"
+                      />
+                    </div>
+                    <div className="p-4">
+                      <Link href={`/producto/${item.products?.id}`}>
+                        <h3 className="font-semibold text-foreground hover:text-primary transition-colors cursor-pointer line-clamp-2 mb-2">
+                          {item.products?.name}
+                        </h3>
+                      </Link>
+                      <p className="text-lg font-bold text-primary mb-3">${(item.products?.price || 0).toFixed(2)}</p>
+                      <div className="flex gap-2">
+                        <Link href={`/producto/${item.products?.id}`} className="flex-1">
+                          <Button variant="outline" className="w-full rounded-lg cursor-pointer text-sm">
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        </Link>
+                        <button
+                          onClick={() => handleRemoveFromWishlist(item.id)}
+                          className="text-destructive hover:bg-destructive/10 rounded-lg p-2 transition-colors cursor-pointer border border-border"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}

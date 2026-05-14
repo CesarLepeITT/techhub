@@ -1,11 +1,23 @@
 "use client"
 
-import { KeyboardEvent, useState } from "react"
+import { KeyboardEvent, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Menu, X, ShoppingCart, User, Search, Sparkles, LayoutGrid, Clapperboard } from "lucide-react"
+import {
+  Menu,
+  X,
+  ShoppingCart,
+  User,
+  Search,
+  Sparkles,
+  LayoutGrid,
+  Clapperboard,
+  LogOut,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { useSession } from "@/components/SessionProvider"
+import { getCart } from "@/lib/supabase-queries"
 
 const navigation = [
   { name: "Productos", href: "/productos", icon: LayoutGrid },
@@ -16,8 +28,38 @@ const navigation = [
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  const cartItemCount = 3
+  const [cartItemCount, setCartItemCount] = useState(0)
   const router = useRouter()
+  const { user, logout } = useSession()
+
+  useEffect(() => {
+    const loadCartCount = async () => {
+      if (!user) {
+        setCartItemCount(0)
+        return
+      }
+
+      const response = await getCart(user.id)
+      if (response.error || !response.data) {
+        setCartItemCount(0)
+        return
+      }
+
+      const count = response.data.reduce((sum, item) => sum + item.quantity, 0)
+      setCartItemCount(count)
+    }
+
+    const handleCartUpdated = () => {
+      void loadCartCount()
+    }
+
+    void loadCartCount()
+    window.addEventListener("cart-updated", handleCartUpdated)
+
+    return () => {
+      window.removeEventListener("cart-updated", handleCartUpdated)
+    }
+  }, [user])
 
   const handleSearch = () => {
     const query = searchQuery.trim()
@@ -33,20 +75,17 @@ export function Header() {
 
   return (
     <>
-      {/* Desktop Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 hidden md:block">
+      <header className="fixed left-0 right-0 top-0 z-50 hidden md:block">
         <div className="navbar-solid shadow-soft">
           <div className="mx-auto max-w-7xl px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
-              {/* Logo */}
               <Link href="/" className="flex items-center gap-2 cursor-pointer">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
                   <Sparkles className="h-5 w-5 text-primary-foreground" />
                 </div>
-                <span className="text-lg font-semibold text-foreground">TechMarket</span>
+                <span className="text-lg font-semibold text-foreground">techHub</span>
               </Link>
 
-              {/* Navigation */}
               <nav className="flex items-center gap-1">
                 {navigation.map((item) => (
                   <Link
@@ -60,7 +99,6 @@ export function Header() {
                 ))}
               </nav>
 
-              {/* Actions */}
               <div className="flex items-center gap-2">
                 <div className="hidden items-center gap-2 lg:flex">
                   <div className="relative w-64 xl:w-72">
@@ -78,11 +116,13 @@ export function Header() {
                     <Search className="h-5 w-5" />
                   </Button>
                 </div>
+
                 <Link href="/productos" className="lg:hidden">
                   <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer">
                     <Search className="h-5 w-5" />
                   </Button>
                 </Link>
+
                 <Link href="/carrito">
                   <Button variant="ghost" size="icon" className="relative rounded-lg cursor-pointer">
                     <ShoppingCart className="h-5 w-5" />
@@ -93,27 +133,41 @@ export function Header() {
                     )}
                   </Button>
                 </Link>
-                <Link href="/iniciar-sesion">
-                  <Button variant="outline" className="ml-2 rounded-lg cursor-pointer">
-                    <User className="mr-2 h-4 w-4" />
-                    Iniciar sesión
-                  </Button>
-                </Link>
+
+                {user ? (
+                  <>
+                    <Link href="/perfil">
+                      <Button variant="outline" className="ml-2 rounded-lg cursor-pointer">
+                        <User className="mr-2 h-4 w-4" />
+                        Mi perfil
+                      </Button>
+                    </Link>
+                    <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer" onClick={() => void logout()}>
+                      <LogOut className="h-5 w-5" />
+                    </Button>
+                  </>
+                ) : (
+                  <Link href="/iniciar-sesion">
+                    <Button variant="outline" className="ml-2 rounded-lg cursor-pointer">
+                      <User className="mr-2 h-4 w-4" />
+                      Iniciar sesion
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Mobile Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 md:hidden">
+      <header className="fixed left-0 right-0 top-0 z-50 md:hidden">
         <div className="navbar-solid shadow-soft">
           <div className="flex h-14 items-center justify-between px-4">
             <Link href="/" className="flex items-center gap-2 cursor-pointer">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                 <Sparkles className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="text-base font-semibold text-foreground">TechMarket</span>
+              <span className="text-base font-semibold text-foreground">techHub</span>
             </Link>
 
             <div className="flex items-center gap-1">
@@ -144,11 +198,10 @@ export function Header() {
           </div>
         </div>
 
-        {/* Mobile Menu */}
         <div
           className={cn(
             "navbar-solid absolute left-0 right-0 top-14 overflow-hidden shadow-elevated transition-all duration-300",
-            mobileMenuOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"
+            mobileMenuOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
           )}
         >
           <nav className="flex flex-col gap-1 p-4">
@@ -170,6 +223,7 @@ export function Header() {
                 </Button>
               </div>
             </div>
+
             {navigation.map((item) => (
               <Link
                 key={item.name}
@@ -181,17 +235,42 @@ export function Header() {
                 {item.name}
               </Link>
             ))}
-            <div className="mt-2">
-              <Link href="/iniciar-sesion" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="outline" className="w-full rounded-lg cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  Iniciar sesión
-                </Button>
-              </Link>
+
+            <div className="mt-2 space-y-2">
+              {user ? (
+                <>
+                  <Link href="/perfil" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="outline" className="w-full rounded-lg cursor-pointer">
+                      <User className="mr-2 h-4 w-4" />
+                      Mi perfil
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    className="w-full rounded-lg cursor-pointer"
+                    onClick={async () => {
+                      setMobileMenuOpen(false)
+                      await logout()
+                    }}
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Cerrar sesion
+                  </Button>
+                </>
+              ) : (
+                <Link href="/iniciar-sesion" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="outline" className="w-full rounded-lg cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    Iniciar sesion
+                  </Button>
+                </Link>
+              )}
             </div>
           </nav>
         </div>
       </header>
+
+      <div className="h-14 md:h-16" />
     </>
   )
 }

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ChevronLeft,
   Heart,
@@ -24,6 +25,7 @@ import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { cn } from "@/lib/utils"
+import { useSession } from "@/components/SessionProvider"
 
 interface Review {
   id: string
@@ -142,6 +144,8 @@ function formatPrice(price: number): string {
 }
 
 export default function ProductDetailPage() {
+  const router = useRouter()
+  const { user } = useSession()
   const [selectedImage, setSelectedImage] = useState(0)
   const [quantity, setQuantity] = useState(1)
   const [isFavorited, setIsFavorited] = useState(false)
@@ -153,8 +157,22 @@ export default function ProductDetailPage() {
   const subtotal = unitPrice * quantity
 
   const handleAddToCart = () => {
+    if (!user) {
+      router.push("/iniciar-sesion")
+      return
+    }
+
     setIsAdded(true)
     setTimeout(() => setIsAdded(false), 2000)
+  }
+
+  const handleFavorite = () => {
+    if (!user) {
+      router.push("/iniciar-sesion")
+      return
+    }
+
+    setIsFavorited(!isFavorited)
   }
 
   return (
@@ -221,7 +239,7 @@ export default function ProductDetailPage() {
                     </h1>
                   </div>
                   <button
-                    onClick={() => setIsFavorited(!isFavorited)}
+                    onClick={handleFavorite}
                     className={cn(
                       "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
                       isFavorited

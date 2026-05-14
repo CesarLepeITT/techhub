@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState } from "react"
 import Image from "next/image"
@@ -34,8 +34,8 @@ const sidebarNavigation = [
   { name: "Dashboard", icon: LayoutDashboard, href: "/vendedor", active: true },
   { name: "Productos", icon: Package, href: "/vendedor/productos", active: false },
   { name: "Pedidos", icon: ShoppingCart, href: "/vendedor/pedidos", active: false },
-  { name: "Analíticas", icon: BarChart3, href: "/vendedor/analiticas", active: false },
-  { name: "Configuración", icon: Settings, href: "/vendedor/configuracion", active: false },
+  { name: "AnalÃ­ticas", icon: BarChart3, href: "/vendedor/analiticas", active: false },
+  { name: "ConfiguraciÃ³n", icon: Settings, href: "/vendedor/configuracion", active: false },
 ]
 
 const statsCards = [
@@ -64,7 +64,7 @@ const statsCards = [
     color: "bg-[#84bcbf]/20 text-foreground",
   },
   {
-    title: "Conversión",
+    title: "ConversiÃ³n",
     value: "5.4%",
     change: "+0.8%",
     trend: "up",
@@ -84,7 +84,7 @@ const recentOrders = [
   },
   {
     id: "ORD-002",
-    customer: "María García",
+    customer: "MarÃ­a GarcÃ­a",
     products: 5,
     total: 2890,
     status: "processing",
@@ -92,7 +92,7 @@ const recentOrders = [
   },
   {
     id: "ORD-003",
-    customer: "Roberto Jiménez",
+    customer: "Roberto JimÃ©nez",
     products: 1,
     total: 189,
     status: "shipped",
@@ -100,7 +100,7 @@ const recentOrders = [
   },
   {
     id: "ORD-004",
-    customer: "Ana López",
+    customer: "Ana LÃ³pez",
     products: 8,
     total: 4250,
     status: "pending",
@@ -108,7 +108,7 @@ const recentOrders = [
   },
   {
     id: "ORD-005",
-    customer: "Pedro Sánchez",
+    customer: "Pedro SÃ¡nchez",
     products: 2,
     total: 649,
     status: "completed",
@@ -148,7 +148,7 @@ const aiPredictions = [
     id: "1",
     type: "demand",
     title: "Aumento de demanda esperado",
-    description: "Arduino Nano tendrá +45% de demanda en las próximas 2 semanas",
+    description: "Arduino Nano tendrÃ¡ +45% de demanda en las prÃ³ximas 2 semanas",
     confidence: 87,
     action: "Reabastecer",
   },
@@ -164,7 +164,7 @@ const aiPredictions = [
     id: "3",
     type: "trend",
     title: "Tendencia emergente",
-    description: "Sensores de CO2 en aumento. Considera agregar al catálogo.",
+    description: "Sensores de CO2 en aumento. Considera agregar al catÃ¡logo.",
     confidence: 65,
     action: "Explorar",
   },
@@ -194,7 +194,7 @@ function Sidebar() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
             <Sparkles className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-lg font-semibold text-foreground">TechMarket</span>
+          <span className="text-lg font-semibold text-foreground">techHub</span>
         </div>
 
         {/* Navigation */}
@@ -486,3 +486,4 @@ export default function SellerDashboard() {
     </div>
   )
 }
+

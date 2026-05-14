@@ -1,11 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { MouseEvent, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Star, ShoppingCart, Package, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { addToCart } from "@/lib/supabase-queries"
+import { useSession } from "@/components/SessionProvider"
 
 interface ProductCardProps {
   id: string
@@ -50,14 +53,30 @@ export function ProductCard({
 }: ProductCardProps) {
   const [isAdding, setIsAdding] = useState(false)
   const [isAdded, setIsAdded] = useState(false)
+  const router = useRouter()
+  const { user } = useSession()
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (!user) {
+      router.push("/iniciar-sesion")
+      return
+    }
+
     setIsAdding(true)
-    setTimeout(() => {
+
+    const response = await addToCart(user.id, id, 1)
+    if (response.error) {
       setIsAdding(false)
-      setIsAdded(true)
-      setTimeout(() => setIsAdded(false), 2000)
-    }, 500)
+      return
+    }
+
+    window.dispatchEvent(new Event("cart-updated"))
+    setIsAdding(false)
+    setIsAdded(true)
+    setTimeout(() => setIsAdded(false), 2000)
   }
 
   return (
@@ -70,7 +89,7 @@ export function ProductCard({
       )}
 
       {/* Image Container */}
-      <Link href={`/productos/${id}`} className="cursor-pointer">
+      <Link href={`/producto/${id}`} className="cursor-pointer">
         <div className="relative aspect-square overflow-hidden bg-secondary/30">
           <Image
             src={image}
@@ -89,7 +108,7 @@ export function ProductCard({
         </span>
 
         {/* Title */}
-        <Link href={`/productos/${id}`} className="cursor-pointer">
+        <Link href={`/producto/${id}`} className="cursor-pointer">
           <h3 className="mb-2 line-clamp-2 text-sm font-semibold leading-snug text-foreground hover:text-primary transition-colors">
             {name}
           </h3>

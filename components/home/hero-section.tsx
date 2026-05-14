@@ -51,14 +51,9 @@ export function HeroSection() {
   }
 
   return (
-    <section className="relative min-h-[100svh] overflow-hidden bg-secondary/30 pt-16 md:min-h-[90vh] md:pt-24">
-      <div className="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-24 lg:px-8">
+    <section className="relative overflow-hidden bg-secondary/30 md:min-h-[90vh]">
+      <div className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6  lg:px-8">
         <div className="mx-auto max-w-4xl text-center">
-          {/* Badge */}
-          <div className="mb-6 inline-flex items-center gap-2 rounded-lg bg-primary/10 px-4 py-2 text-sm font-medium text-primary cursor-default">
-            <Sparkles className="h-4 w-4" />
-            Marketplace con IA para makers
-          </div>
 
           {/* Hero Title */}
           <h1 className="mb-6 text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
@@ -68,7 +63,7 @@ export function HeroSection() {
 
           {/* Subtitle */}
           <p className="mx-auto mb-10 max-w-2xl text-pretty text-lg text-muted-foreground sm:text-xl">
-            Compra hardware, kits, refacciones y accesorios tech con recomendaciones inteligentes, mayoreo y entrega local.
+            Compra hardware, kits, refacciones y accesorios tech con recomendaciones inteligentes.
           </p>
 
           {/* AI Search Box */}

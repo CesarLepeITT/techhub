@@ -31,12 +31,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     checkSession()
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        await fetchUserProfile(session.user.id)
-        setIsAuthenticated(true)
-      } else {
-        setUser(null)
-        setIsAuthenticated(false)
+      try {
+        if (session?.user) {
+          await fetchUserProfile(session.user.id)
+          setIsAuthenticated(true)
+        } else {
+          setUser(null)
+          setIsAuthenticated(false)
+        }
+      } finally {
+        setIsLoading(false)
       }
     })
 

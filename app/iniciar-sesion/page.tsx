@@ -23,7 +23,7 @@ export default function IniciarSesionPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get("registered") === "true") {
-      setSuccessMessage("Cuenta creada exitosamente. Por favor inicia sesión.")
+      setSuccessMessage("Cuenta creada exitosamente. Por favor revisa tu correo para confirmar tu cuenta.")
     }
   }, [])
 
@@ -70,7 +70,7 @@ export default function IniciarSesionPage() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
                 <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="text-lg font-semibold text-foreground">TechMarket</span>
+              <span className="text-lg font-semibold text-foreground">techHub</span>
             </Link>
             <Link href="/">
               <Button variant="ghost" className="rounded-lg cursor-pointer">
