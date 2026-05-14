@@ -1,18 +1,64 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowLeft, User, Store, Mail, Lock, Eye, EyeOff, Sparkles } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { ArrowLeft, User, Store, Mail, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 
 type UserType = "usuario" | "comprador" | null
 
 export default function IniciarSesionPage() {
+  const router = useRouter()
   const [userType, setUserType] = useState<UserType>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [successMessage, setSuccessMessage] = useState("")
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("registered") === "true") {
+      setSuccessMessage("Cuenta creada exitosamente. Por favor inicia sesión.")
+    }
+  }, [])
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setError("")
+
+    if (!email || !password) {
+      setError("Por favor completa todos los campos")
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (loginError) {
+        setError(loginError.message)
+        setIsLoading(false)
+        return
+      }
+
+      if (data.user) {
+        router.push("/")
+      }
+    } catch (err) {
+      setError("Error al iniciar sesión. Por favor intenta de nuevo")
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -120,8 +166,23 @@ export default function IniciarSesionPage() {
               </div>
             </div>
 
+            {/* Success Message */}
+            {successMessage && (
+              <div className="mb-4 rounded-lg bg-green-50 p-4 border border-green-200">
+                <p className="text-sm text-green-800">{successMessage}</p>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {error && (
+              <div className="mb-4 rounded-lg bg-destructive/10 p-4 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-destructive">{error}</p>
+              </div>
+            )}
+
             {/* Form Fields */}
-            <form className="space-y-4">
+            <form className="space-y-4" onSubmit={handleSubmit}>
               <div>
                 <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-foreground">
                   Correo electrónico
@@ -173,8 +234,19 @@ export default function IniciarSesionPage() {
                 </Link>
               </div>
 
-              <Button type="submit" className="w-full rounded-lg bg-primary hover:bg-primary/90 cursor-pointer">
-                Iniciar sesión
+              <Button
+                type="submit"
+                className="w-full rounded-lg bg-primary hover:bg-primary/90 cursor-pointer"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader className="mr-2 h-4 w-4 animate-spin" />
+                    Iniciando sesión...
+                  </>
+                ) : (
+                  "Iniciar sesión"
+                )}
               </Button>
             </form>
 
