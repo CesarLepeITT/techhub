@@ -80,8 +80,30 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     logStage("retrieve_fts_empty", { query: cleanQuery })
   }
 
-  const ftsErrorBody = await ftsRes.text()
-  logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
+  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
+  const normalized = cleanQuery
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, " ")
+
+  const rawTokens = cleanQuery
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3)
+  const normalizedTokens = normalized.split(/\s+/).filter((t) => t.length >= 3)
+  const tokens = Array.from(new Set([...rawTokens, ...normalizedTokens])).slice(0, 8)
+
+  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized].filter((p) => p.length >= 3)))
+  const phraseFilters = phraseCandidates.flatMap((phrase) => {
+    const like = encodeURIComponent(`%${phrase}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+  const tokenFilters = tokens.flatMap((token) => {
+    const like = encodeURIComponent(`%${token}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
 
   // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
   const normalized = cleanQuery
