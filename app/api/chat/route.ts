@@ -90,25 +90,15 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\w\s]/g, " ")
 
-  const rawTokens = cleanQuery
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 3)
-  const normalizedTokens = normalized.split(/\s+/).filter((t) => t.length >= 3)
-  const tokens = Array.from(new Set([...rawTokens, ...normalizedTokens])).slice(0, 8)
+  const tokens = Array.from(new Set(normalized.split(/\s+/).filter((t) => t.length >= 3))).slice(0, 5)
 
-  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized].filter((p) => p.length >= 3)))
-  const phraseFilters = phraseCandidates.flatMap((phrase) => {
-    const like = encodeURIComponent(`%${phrase}%`)
-    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
-  })
+  const phraseLike = encodeURIComponent(`%${normalized}%`)
   const tokenFilters = tokens.flatMap((token) => {
     const like = encodeURIComponent(`%${token}%`)
     return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
   })
 
-  const orFilters = [...phraseFilters, ...tokenFilters].join(",")
+  const orFilters = [`name.ilike.${phraseLike}`, `short_description.ilike.${phraseLike}`, `tags.ilike.${phraseLike}`, ...tokenFilters].join(",")
   const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
   const ilikeRes = await supabaseRequest(ilikePath)
 
