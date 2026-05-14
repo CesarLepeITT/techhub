@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -106,6 +106,30 @@ export function Header() {
     }, 280)
   }
 
+  // Ghost text: first suggestion that starts with the current query
+  const ghostCompletion = useMemo(() => {
+    const q = searchQuery.trim()
+    if (!q || suggestions.length === 0) return ""
+    const lower = q.toLowerCase()
+    const match = suggestions.find((s) => s.name.toLowerCase().startsWith(lower))
+    if (!match || match.name.toLowerCase() === lower) return ""
+    return match.name.slice(searchQuery.length)
+  }, [searchQuery, suggestions])
+
+  const acceptGhost = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (
+      ghostCompletion &&
+      (e.key === "Tab" ||
+        (e.key === "ArrowRight" && e.currentTarget.selectionStart === searchQuery.length))
+    ) {
+      e.preventDefault()
+      setSearchQuery(searchQuery + ghostCompletion)
+      setShowSuggestions(false)
+    }
+    if (e.key === "Enter") handleSearch()
+    if (e.key === "Escape") setShowSuggestions(false)
+  }
+
   const handleSearch = () => {
     const query = searchQuery.trim()
     setShowSuggestions(false)
@@ -170,19 +194,24 @@ export function Header() {
               <div className="flex items-center gap-2">
                 <div className="hidden items-center gap-2 lg:flex">
                   <div ref={desktopSearchRef} className="relative w-64 xl:w-72">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      type="search"
-                      value={searchQuery}
-                      onChange={(e) => handleQueryChange(e.target.value)}
-                      onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSearch()
-                        if (e.key === "Escape") setShowSuggestions(false)
-                      }}
-                      placeholder="Buscar productos..."
-                      className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
+                    <div className="relative w-full rounded-lg border border-border bg-background focus-within:ring-2 focus-within:ring-primary/30">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      {ghostCompletion && (
+                        <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center overflow-hidden pl-9 pr-3">
+                          <span className="whitespace-pre text-transparent text-sm">{searchQuery}</span>
+                          <span className="whitespace-pre text-muted-foreground/50 text-sm">{ghostCompletion}</span>
+                        </div>
+                      )}
+                      <input
+                        type="search"
+                        value={searchQuery}
+                        onChange={(e) => handleQueryChange(e.target.value)}
+                        onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+                        onKeyDown={acceptGhost}
+                        placeholder="Buscar productos..."
+                        className="relative w-full bg-transparent py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                      />
+                    </div>
                     {showSuggestions && suggestions.length > 0 && <SuggestionsDropdown />}
                   </div>
                   <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer" onClick={handleSearch}>
@@ -279,20 +308,23 @@ export function Header() {
         >
           <nav className="flex flex-col gap-1 p-4">
             <div ref={mobileSearchRef} className="relative mb-2">
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-2">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-2 focus-within:ring-2 focus-within:ring-primary/30">
                 <div className="relative flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  {ghostCompletion && (
+                    <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center overflow-hidden pl-9 pr-3">
+                      <span className="whitespace-pre text-transparent text-sm">{searchQuery}</span>
+                      <span className="whitespace-pre text-muted-foreground/50 text-sm">{ghostCompletion}</span>
+                    </div>
+                  )}
                   <input
                     type="search"
                     value={searchQuery}
                     onChange={(e) => handleQueryChange(e.target.value)}
                     onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSearch()
-                      if (e.key === "Escape") setShowSuggestions(false)
-                    }}
+                    onKeyDown={acceptGhost}
                     placeholder="Buscar productos..."
-                    className="w-full rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                    className="relative w-full bg-transparent py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                   />
                 </div>
                 <Button size="sm" className="rounded-lg" onClick={handleSearch}>

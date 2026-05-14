@@ -10,6 +10,7 @@ import { FeaturedProducts } from "@/components/home/featured-products"
 import { CategoriesSection } from "@/components/home/categories-section"
 import { FeaturesSection } from "@/components/home/features-section"
 import { StatsSection } from "@/components/home/stats-section"
+import { PartnersSection } from "@/components/home/partners-section"
 
 export default function HomePage() {
   const { user, isLoading } = useSession()
@@ -34,6 +35,7 @@ export default function HomePage() {
         <CategoriesSection />
         <StatsSection />
         <FeaturesSection />
+        <PartnersSection />
       </main>
       <Footer />
     </div>

@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -60,6 +60,17 @@ export default function ProductosPage() {
   const [suggestions, setSuggestions] = useState<Product[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Ghost text: first product name that starts with the current query
+  const ghostCompletion = useMemo(() => {
+    const q = searchQuery.trim()
+    if (!q) return ""
+    const lower = q.toLowerCase()
+    const match = allProducts.find((p) => p.name.toLowerCase().startsWith(lower))
+    if (!match || match.name.toLowerCase() === lower) return ""
+    return match.name.slice(searchQuery.length)
+  }, [searchQuery, allProducts])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -219,24 +230,56 @@ export default function ProductosPage() {
           {/* Search Bar */}
           <div className="mb-6 flex gap-2">
             <div ref={searchContainerRef} className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Buscar productos..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value)
-                  if (e.target.value.trim().length >= 2) setShowSuggestions(true)
-                  else setShowSuggestions(false)
-                }}
-                onFocus={() => {
-                  if (suggestions.length > 0) setShowSuggestions(true)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setShowSuggestions(false)
-                }}
-                className="w-full rounded-lg border border-border bg-background py-3 pl-10 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-              />
+              {/* Border + background container */}
+              <div className="relative w-full rounded-lg border border-border bg-background focus-within:ring-2 focus-within:ring-primary/30">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                {/* Ghost text layer — sits behind the real input */}
+                {ghostCompletion && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 flex items-center overflow-hidden pl-10 pr-4"
+                  >
+                    {/* Invisible typed portion — reserves exact same width */}
+                    <span className="whitespace-pre text-transparent">{searchQuery}</span>
+                    {/* Gray ghost completion */}
+                    <span className="whitespace-pre text-muted-foreground/50">{ghostCompletion}</span>
+                  </div>
+                )}
+
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Buscar productos..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    if (e.target.value.trim().length >= 2) setShowSuggestions(true)
+                    else setShowSuggestions(false)
+                  }}
+                  onFocus={() => {
+                    if (suggestions.length > 0) setShowSuggestions(true)
+                  }}
+                  onKeyDown={(e) => {
+                    // Tab or ArrowRight at end of input → accept ghost completion
+                    if (
+                      ghostCompletion &&
+                      (e.key === "Tab" ||
+                        (e.key === "ArrowRight" &&
+                          e.currentTarget.selectionStart === searchQuery.length))
+                    ) {
+                      e.preventDefault()
+                      const completed = searchQuery + ghostCompletion
+                      setSearchQuery(completed)
+                      setShowSuggestions(false)
+                    }
+                    if (e.key === "Escape") setShowSuggestions(false)
+                  }}
+                  className="relative w-full bg-transparent py-3 pl-10 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none cursor-text"
+                />
+              </div>
+
+              {/* Dropdown suggestions */}
               {showSuggestions && suggestions.length > 0 && (
                 <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-border bg-card shadow-elevated">
                   {suggestions.map((product) => (
@@ -250,11 +293,7 @@ export default function ProductosPage() {
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary cursor-pointer"
                     >
                       <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-md bg-secondary">
-                        <img
-                          src={product.image_url}
-                          alt={product.name}
-                          className="h-full w-full object-cover"
-                        />
+                        <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{product.name}</p>
