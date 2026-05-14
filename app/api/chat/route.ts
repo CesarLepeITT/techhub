@@ -76,7 +76,8 @@ async function retrieveProducts(query: string): Promise<Product[]> {
 
   if (ftsRes.ok) {
     const rows = (await ftsRes.json()) as Product[]
-    return rows.slice(0, 5)
+    if (rows.length > 0) return rows.slice(0, 5)
+    logStage("retrieve_fts_empty", { query: cleanQuery })
   }
 
   const ftsErrorBody = await ftsRes.text()
