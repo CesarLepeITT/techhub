@@ -32,12 +32,15 @@ function sanitizeSearchQuery(input: string): string {
 }
 
 function tokenizeForIlikeFallback(input: string): string[] {
-  return input
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 2)
-    .slice(0, 3)
+  return [
+    ...new Set(
+      input
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .split(/\s+/)
+        .filter((token) => token.length >= 3 && !FALLBACK_STOP_WORDS.has(token)),
+    ),
+  ].slice(0, 5)
 }
 
 const env = {
@@ -279,38 +282,46 @@ async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
   }
 }
 
-async function retrieveProducts(query: string): Promise<Product[]> {
+async function retrieveProducts(query: string, fallbackQuery?: string): Promise<Product[]> {
   const cleanQuery = query
+  const cleanFallbackQuery = fallbackQuery && fallbackQuery !== query ? fallbackQuery : ""
   const select = "id,name,short_description,retail_price,stock,main_image_url"
   logStage("retrieve_start", {
     cleanQueryLength: cleanQuery.length,
     cleanQueryPreview: previewText(cleanQuery),
+    fallbackQueryLength: cleanFallbackQuery.length || undefined,
+    fallbackQueryPreview: cleanFallbackQuery ? previewText(cleanFallbackQuery) : undefined,
   })
 
-  if (!cleanQuery) {
+  if (!cleanQuery && !cleanFallbackQuery) {
     logStage("retrieve_no_tokens", { query: cleanQuery })
     return []
   }
 
-  try {
-    const ftsRes = await supabaseRequest("rpc/search_products_web", {
-      method: "POST",
-      body: JSON.stringify({ raw_query: cleanQuery, max_results: 5 }),
-    })
+  const ftsQueries = [cleanQuery, cleanFallbackQuery].filter(Boolean)
+  for (const ftsQuery of ftsQueries) {
+    try {
+      const ftsRes = await supabaseRequest("rpc/search_products_web", {
+        method: "POST",
+        body: JSON.stringify({ raw_query: ftsQuery, max_results: 5 }),
+      })
 
-    if (ftsRes.ok) {
-      const rows = (await ftsRes.json()) as Product[]
-      logStage("retrieve_ok_fts", { count: rows.length, queryLength: cleanQuery.length })
-      if (rows.length > 0) return rows
-    } else {
-      const errorBody = await ftsRes.text()
-      logStage("retrieve_fts_failed", { status: ftsRes.status, error: errorBody.slice(0, 200) })
+      if (ftsRes.ok) {
+        const rows = (await ftsRes.json()) as Product[]
+        logStage("retrieve_ok_fts", { count: rows.length, queryLength: ftsQuery.length })
+        if (rows.length > 0) return rows
+      } else {
+        const errorBody = await ftsRes.text()
+        logStage("retrieve_fts_failed", { status: ftsRes.status, error: errorBody.slice(0, 200) })
+        if (ftsRes.status === 404) break
+      }
+    } catch (error) {
+      logStage("retrieve_fts_exception", { message: error instanceof Error ? error.message : "unknown" })
     }
-  } catch (error) {
-    logStage("retrieve_fts_exception", { message: error instanceof Error ? error.message : "unknown" })
   }
 
-  const tokens = tokenizeForIlikeFallback(cleanQuery)
+  const fallbackSource = cleanFallbackQuery || cleanQuery
+  const tokens = tokenizeForIlikeFallback(fallbackSource)
   if (tokens.length === 0) return []
 
   const orFilters = tokens.map((token) => `name.ilike.%${token}%`).join(",")
@@ -326,7 +337,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     }
 
     const rows = (await res.json()) as Product[]
-    logStage("retrieve_ok_fallback", { count: rows.length, tokens: tokens.length })
+    logStage("retrieve_ok_fallback", { count: rows.length, tokens, fallbackSourcePreview: previewText(fallbackSource) })
     return rows.slice(0, 5)
   } catch (error) {
     logStage("retrieve_fallback_exception", { message: error instanceof Error ? error.message : "unknown" })
@@ -398,8 +409,8 @@ export async function POST(req: Request) {
 
     let products: Product[] = []
     try {
-      products = await retrieveProducts(searchQuery)
-      logStage("retrieve_done", { productCount: products.length, searchQuery })
+      products = await retrieveProducts(searchQuery, imageDescription)
+      logStage("retrieve_done", { productCount: products.length, searchQuery, imageDescription })
     } catch (error) {
       logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })

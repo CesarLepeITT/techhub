@@ -32,3 +32,5 @@ as $$
   order by ts_rank(p.search_vector, websearch_to_tsquery('spanish', raw_query)) desc
   limit max_results;
 $$;
+
+notify pgrst, 'reload schema';
