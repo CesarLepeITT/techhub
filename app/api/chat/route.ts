@@ -16,7 +16,8 @@ const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
-  openAiKey: process.env.OPENAI_API_KEY ?? process.env.OPEN_API_KEY ?? "",
+  xaiApiKey: process.env.XAI_API_KEY ?? "",
+  xaiModel: process.env.XAI_MODEL ?? "grok-3-mini",
 }
 
 function detectIntent(query: string): string {
@@ -45,7 +46,7 @@ function validateRequiredEnv() {
   if (!env.supabaseUrl) missing.push("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
   if (!env.supabaseServiceRoleKey)
     missing.push("SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY fallback)")
-  if (!env.openAiKey) missing.push("OPENAI_API_KEY (or OPEN_API_KEY)")
+  if (!env.xaiApiKey) missing.push("XAI_API_KEY")
   return missing
 }
 
@@ -75,16 +76,40 @@ async function retrieveProducts(query: string): Promise<Product[]> {
 
   if (ftsRes.ok) {
     const rows = (await ftsRes.json()) as Product[]
-    return rows.slice(0, 5)
+    if (rows.length > 0) return rows.slice(0, 5)
+    logStage("retrieve_fts_empty", { query: cleanQuery })
   }
 
   const ftsErrorBody = await ftsRes.text()
   logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
 
-  // 2) Fallback: ILIKE
-  // Para ILIKE, no usamos comillas, pero escapamos la query de forma más conservadora
-  const simpleEncoded = encodeURIComponent(`%${cleanQuery.replace(/,/g, '')}%`)
-  const ilikePath = `products?select=${select}&or=(name.ilike.${simpleEncoded},short_description.ilike.${simpleEncoded},tags.ilike.${simpleEncoded})&limit=5`
+  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
+  const normalized = cleanQuery
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, " ")
+
+  const rawTokens = cleanQuery
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3)
+  const normalizedTokens = normalized.split(/\s+/).filter((t) => t.length >= 3)
+  const tokens = Array.from(new Set([...rawTokens, ...normalizedTokens])).slice(0, 8)
+
+  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized].filter((p) => p.length >= 3)))
+  const phraseFilters = phraseCandidates.flatMap((phrase) => {
+    const like = encodeURIComponent(`%${phrase}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+  const tokenFilters = tokens.flatMap((token) => {
+    const like = encodeURIComponent(`%${token}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+
+  const orFilters = [...phraseFilters, ...tokenFilters].join(",")
+  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
   const ilikeRes = await supabaseRequest(ilikePath)
 
   if (!ilikeRes.ok) {
@@ -97,23 +122,6 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   return rows.slice(0, 5)
 }
 
-  const ftsErrorBody = await ftsRes.text()
-  logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
-
-  // 2) Minimal fallback: ILIKE to avoid hard 502 on parser/index issues.
-  const like = encodeURIComponent(`%${cleanQuery}%`)
-  const ilikePath = `products?select=${select}&or=(name.ilike.${like},short_description.ilike.${like},tags.ilike.${like})&limit=5`
-  const ilikeRes = await supabaseRequest(ilikePath)
-
-  if (!ilikeRes.ok) {
-    const ilikeErrorBody = await ilikeRes.text()
-    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
-    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
-  }
-
-  const rows = (await ilikeRes.json()) as Product[]
-  return rows.slice(0, 5)
-}
 
 async function logEvent(userId: string, eventType: string, payload: Record<string, unknown>) {
   await supabaseRequest("user_events", {
@@ -155,14 +163,14 @@ export async function POST(req: Request) {
       explanation =
         "No encontré productos exactos todavía. ¿Cuál es tu presupuesto, uso principal, categoría preferida y tipo de proyecto?"
     } else {
-      const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      const aiRes = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.openAiKey}`,
+          Authorization: `Bearer ${env.xaiApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: env.xaiModel,
           temperature: 0.2,
           max_tokens: 220,
           messages: [
@@ -177,7 +185,7 @@ export async function POST(req: Request) {
 
       if (!aiRes.ok) {
         const responseText = await aiRes.text()
-        logStage("openai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
+        logStage("xai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
         return NextResponse.json({ error: "No fue posible generar respuesta de IA" }, { status: 502 })
       }
 
