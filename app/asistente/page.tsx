@@ -70,16 +70,27 @@ export default function AssistantPage() {
   }, [messages, isTyping])
 
   const handleSubmit = async (prompt: string) => {
-    if (!prompt.trim() || isTyping) return
-    setMessages((prev) => [...prev, { id: Date.now().toString(), type: "user", content: prompt, timestamp: new Date() }])
+    const imageData = capturedImage
+    const trimmedPrompt = prompt.trim()
+    if ((!trimmedPrompt && !imageData) || isTyping) return
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        type: "user",
+        content: imageData ? `${trimmedPrompt || "Imagen adjunta"} (con imagen)` : trimmedPrompt,
+        timestamp: new Date(),
+      },
+    ])
     setInputValue("")
+    setCapturedImage(null)
     setIsTyping(true)
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt }),
+        body: JSON.stringify({ message: trimmedPrompt, ...(imageData ? { imageData } : {}) }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || "Error desconocido")
@@ -149,7 +160,7 @@ export default function AssistantPage() {
                         wrapperClassName="flex-1 min-w-0"
                         inputClassName="h-12 rounded-xl border-border bg-background text-base shadow-none"
                       />
-                      <Button type="submit" className="rounded-xl bg-primary px-5 hover:bg-primary/90" disabled={!inputValue.trim() || isTyping}>
+                      <Button type="submit" className="rounded-xl bg-primary px-5 hover:bg-primary/90" disabled={(!inputValue.trim() && !capturedImage) || isTyping}>
                         <Send className="h-4 w-4" />
                       </Button>
                     </form>
@@ -193,7 +204,7 @@ export default function AssistantPage() {
                         wrapperClassName="flex-1 min-w-0"
                         inputClassName="h-11 rounded-xl border-border bg-background text-base shadow-none"
                       />
-                      <Button type="submit" size="icon" className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90" disabled={!inputValue.trim() || isTyping}>
+                      <Button type="submit" size="icon" className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90" disabled={(!inputValue.trim() && !capturedImage) || isTyping}>
                         <Send className="h-4 w-4" />
                       </Button>
                     </form>
