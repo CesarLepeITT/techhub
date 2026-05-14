@@ -62,10 +62,14 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 
 async function retrieveProducts(query: string): Promise<Product[]> {
   const cleanQuery = query.trim()
-  const encoded = encodeURIComponent(cleanQuery)
+  // Importante: PostgREST necesita que los términos con espacios o comas 
+  // dentro de un .or() estén envueltos en " "
+  const quotedQuery = `"${cleanQuery}"` 
+  const encoded = encodeURIComponent(quotedQuery)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
 
-  // 1) Try full-text search first (websearch syntax is more tolerant for natural phrases).
+  // 1) Try full-text search
+  // Usamos .wfts. para búsqueda de frases
   const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=5`
   const ftsRes = await supabaseRequest(ftsPath)
 
@@ -73,6 +77,25 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     const rows = (await ftsRes.json()) as Product[]
     return rows.slice(0, 5)
   }
+
+  const ftsErrorBody = await ftsRes.text()
+  logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
+
+  // 2) Fallback: ILIKE
+  // Para ILIKE, no usamos comillas, pero escapamos la query de forma más conservadora
+  const simpleEncoded = encodeURIComponent(`%${cleanQuery.replace(/,/g, '')}%`)
+  const ilikePath = `products?select=${select}&or=(name.ilike.${simpleEncoded},short_description.ilike.${simpleEncoded},tags.ilike.${simpleEncoded})&limit=5`
+  const ilikeRes = await supabaseRequest(ilikePath)
+
+  if (!ilikeRes.ok) {
+    const ilikeErrorBody = await ilikeRes.text()
+    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
+    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
+  }
+
+  const rows = (await ilikeRes.json()) as Product[]
+  return rows.slice(0, 5)
+}
 
   const ftsErrorBody = await ftsRes.text()
   logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
