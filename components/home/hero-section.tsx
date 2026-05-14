@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { Sparkles, ArrowRight, Truck, TrendingUp, Package, Play, Send, RefreshCw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -98,6 +98,12 @@ export function HeroSection() {
   const [isTyping, setIsTyping] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = messagesContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, isTyping])
 
   const handleSubmit = async (prompt: string) => {
     if (!prompt.trim() || isTyping) return
@@ -160,159 +166,157 @@ export function HeroSection() {
           </p>
 
           {/* Chat or Search Box */}
-          {messages.length === 0 ? (
-            <div className="mx-auto mb-8 max-w-2xl">
-              {cameraOpen ? (
-                <CameraCapture onClose={() => setCameraOpen(false)} onSend={handlePhotoSend} />
-              ) : (
-                <div className="relative rounded-xl border border-border bg-card p-1.5 shadow-elevated">
-                  {capturedImage && (
-                    <div className="border-b border-border bg-card p-4">
-                      <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-3 text-left">
-                        <img
-                          src={capturedImage}
-                          alt="Foto adjunta"
-                          className="h-16 w-16 shrink-0 rounded-lg object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground">Foto adjunta</p>
-                          <p className="text-xs text-muted-foreground">
-                            Se conserva aquí para usarla en la búsqueda visual.
-                          </p>
+          <div className="mx-auto mb-8 max-w-2xl">
+            {cameraOpen ? (
+              <CameraCapture onClose={() => setCameraOpen(false)} onSend={handlePhotoSend} />
+            ) : (
+              <div className="rounded-xl border border-border bg-card shadow-elevated overflow-hidden flex flex-col h-96">
+                {messages.length === 0 ? (
+                  <div className="flex flex-col h-full overflow-y-auto">
+                    <div className="p-1.5">
+                      {capturedImage && (
+                        <div className="border-b border-border bg-card p-4">
+                          <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-3 text-left">
+                            <img
+                              src={capturedImage}
+                              alt="Foto adjunta"
+                              className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-foreground">Foto adjunta</p>
+                              <p className="text-xs text-muted-foreground">
+                                Se conserva aquí para usarla en la búsqueda visual.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCapturedImage(null)}
+                              className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
+                              aria-label="Quitar foto"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setCapturedImage(null)}
-                          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
-                          aria-label="Quitar foto"
+                      )}
+                      <div className="flex flex-col gap-3 rounded-lg bg-card px-4 py-3 sm:flex-row sm:items-center">
+                        <SmartInput
+                          value={inputValue}
+                          onValueChange={setInputValue}
+                          onSubmit={() => handleSubmit(inputValue)}
+                          onCameraClick={() => setCameraOpen(true)}
+                          placeholder="Describe lo que necesitas construir..."
+                          leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                          wrapperClassName="flex-1 min-w-0"
+                          inputClassName="h-12 rounded-xl border-border bg-background text-base shadow-none"
+                        />
+                        <Button
+                          type="submit"
+                          className="rounded-xl bg-primary px-5 hover:bg-primary/90 cursor-pointer"
+                          disabled={!inputValue.trim() || isTyping}
+                          onClick={() => handleSubmit(inputValue)}
                         >
-                          <X className="h-4 w-4" />
-                        </button>
+                          <Send className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
-                  )}
-                  <div className="flex flex-col gap-3 rounded-lg bg-card px-4 py-3 sm:flex-row sm:items-center">
-                    <SmartInput
-                      value={inputValue}
-                      onValueChange={setInputValue}
-                      onSubmit={() => handleSubmit(inputValue)}
-                      onCameraClick={() => setCameraOpen(true)}
-                      placeholder="Describe lo que necesitas construir..."
-                      leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
-                      wrapperClassName="flex-1 min-w-0"
-                      inputClassName="h-12 rounded-xl border-border bg-background text-base shadow-none"
-                    />
-                    <Button
-                      type="submit"
-                      className="rounded-xl bg-primary px-5 hover:bg-primary/90 cursor-pointer"
-                      disabled={!inputValue.trim() || isTyping}
-                      onClick={() => handleSubmit(inputValue)}
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  {/* Suggestions */}
-                  <div className="rounded-lg border-t border-border bg-card p-4">
-                    <p className="mb-3 text-center text-xs font-medium text-muted-foreground">Prueba con estos ejemplos</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {suggestions.map((suggestion, index) => (
-                        <button
-                          key={index}
-                          className="group flex items-center gap-3 rounded-lg bg-secondary p-3 text-left text-sm text-foreground transition-colors hover:bg-primary/10 cursor-pointer"
-                          onClick={() => handleSubmit(suggestion)}
-                        >
-                          <span className="line-clamp-2">{suggestion}</span>
-                          <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="mx-auto mb-8 max-w-2xl rounded-xl border border-border bg-card shadow-elevated overflow-hidden flex flex-col h-96">
-              {/* Chat Messages */}
-              <div className="flex-1 space-y-4 overflow-y-auto p-4">
-                {messages.map((message) => (
-                  <MessageBubble key={message.id} message={message} />
-                ))}
-                {isTyping && (
-                  <div className="flex gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <Sparkles className="h-5 w-5 text-primary animate-pulse" />
-                    </div>
-                    <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft">
-                      <div className="flex items-center gap-2">
-                        <RefreshCw className="h-4 w-4 animate-spin text-primary" />
-                        <span className="text-sm text-muted-foreground">Buscando productos...</span>
+                    {/* Suggestions */}
+                    <div className="rounded-lg border-t border-border bg-card p-4">
+                      <p className="mb-3 text-center text-xs font-medium text-muted-foreground">Prueba con estos ejemplos</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {suggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            className="group flex items-center gap-3 rounded-lg bg-secondary p-3 text-left text-sm text-foreground transition-colors hover:bg-primary/10 cursor-pointer"
+                            onClick={() => handleSubmit(suggestion)}
+                          >
+                            <span className="line-clamp-2">{suggestion}</span>
+                            <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
-
-              {/* Input */}
-              <div className="sticky bottom-0 border-t border-border bg-card px-4 py-3">
-                {cameraOpen ? (
-                  <CameraCapture onClose={() => setCameraOpen(false)} onSend={handlePhotoSend} />
                 ) : (
-                  <div className="space-y-3">
-                    {capturedImage && (
-                      <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3 text-left">
-                        <img
-                          src={capturedImage}
-                          alt="Foto adjunta"
-                          className="h-16 w-16 shrink-0 rounded-lg object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground">Foto adjunta</p>
-                          <p className="text-xs text-muted-foreground">
-                            Se conserva aquí para usarla en la búsqueda visual.
-                          </p>
+                  <>
+                    {/* Chat Messages */}
+                    <div ref={messagesContainerRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+                      {messages.map((message) => (
+                        <MessageBubble key={message.id} message={message} />
+                      ))}
+                      {isTyping && (
+                        <div className="flex gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                            <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                          </div>
+                          <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft">
+                            <div className="flex items-center gap-2">
+                              <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+                              <span className="text-sm text-muted-foreground">Buscando productos...</span>
+                            </div>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setCapturedImage(null)}
-                          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
-                          aria-label="Quitar foto"
+                      )}
+                    </div>
+                    {/* Input */}
+                    <div className="border-t border-border bg-card px-4 py-3">
+                      <div className="space-y-3">
+                        {capturedImage && (
+                          <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3 text-left">
+                            <img
+                              src={capturedImage}
+                              alt="Foto adjunta"
+                              className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-foreground">Foto adjunta</p>
+                              <p className="text-xs text-muted-foreground">
+                                Se conserva aquí para usarla en la búsqueda visual.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCapturedImage(null)}
+                              className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
+                              aria-label="Quitar foto"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            handleSubmit(inputValue)
+                          }}
+                          className="flex items-center gap-3"
                         >
-                          <X className="h-4 w-4" />
-                        </button>
+                          <SmartInput
+                            value={inputValue}
+                            onValueChange={setInputValue}
+                            onSubmit={() => handleSubmit(inputValue)}
+                            onCameraClick={() => setCameraOpen(true)}
+                            placeholder="Escribe un mensaje..."
+                            leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                            wrapperClassName="flex-1 min-w-0"
+                            inputClassName="h-11 rounded-xl border-border bg-background text-base shadow-none"
+                          />
+                          <Button
+                            type="submit"
+                            size="icon"
+                            className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 cursor-pointer"
+                            disabled={!inputValue.trim() || isTyping}
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        </form>
                       </div>
-                    )}
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        handleSubmit(inputValue)
-                      }}
-                      className="flex items-center gap-3"
-                    >
-                      <SmartInput
-                        value={inputValue}
-                        onValueChange={setInputValue}
-                        onSubmit={() => handleSubmit(inputValue)}
-                        onCameraClick={() => setCameraOpen(true)}
-                        placeholder="Escribe un mensaje..."
-                        leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
-                        wrapperClassName="flex-1 min-w-0"
-                        inputClassName="h-11 rounded-xl border-border bg-background text-base shadow-none"
-                      />
-                      <Button
-                        type="submit"
-                        size="icon"
-                        className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 cursor-pointer"
-                        disabled={!inputValue.trim() || isTyping}
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </form>
-                  </div>
+                    </div>
+                  </>
                 )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* CTA Buttons */}
           <div className="mb-16 flex flex-col items-center justify-center gap-4 sm:flex-row">
