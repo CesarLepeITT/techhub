@@ -21,6 +21,8 @@ const IMAGE_DESCRIPTION_SYSTEM_PROMPT =
 const MAX_SEARCH_QUERY_LENGTH = 400
 const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000
 
+const MAX_SEARCH_QUERY_LENGTH = 400
+const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000
 function sanitizeSearchQuery(input: string): string {
   return input
     .normalize("NFKC")
