@@ -16,7 +16,8 @@ const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
-  openAiKey: process.env.OPENAI_API_KEY ?? process.env.OPEN_API_KEY ?? "",
+  xaiApiKey: process.env.XAI_API_KEY ?? "",
+  xaiModel: process.env.XAI_MODEL ?? "grok-3-mini",
 }
 
 function detectIntent(query: string): string {
@@ -45,7 +46,7 @@ function validateRequiredEnv() {
   if (!env.supabaseUrl) missing.push("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
   if (!env.supabaseServiceRoleKey)
     missing.push("SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY fallback)")
-  if (!env.openAiKey) missing.push("OPENAI_API_KEY (or OPEN_API_KEY)")
+  if (!env.xaiApiKey) missing.push("XAI_API_KEY")
   return missing
 }
 
@@ -138,14 +139,14 @@ export async function POST(req: Request) {
       explanation =
         "No encontré productos exactos todavía. ¿Cuál es tu presupuesto, uso principal, categoría preferida y tipo de proyecto?"
     } else {
-      const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      const aiRes = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.openAiKey}`,
+          Authorization: `Bearer ${env.xaiApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: env.xaiModel,
           temperature: 0.2,
           max_tokens: 220,
           messages: [
@@ -160,7 +161,7 @@ export async function POST(req: Request) {
 
       if (!aiRes.ok) {
         const responseText = await aiRes.text()
-        logStage("openai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
+        logStage("xai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
         return NextResponse.json({ error: "No fue posible generar respuesta de IA" }, { status: 502 })
       }
 
