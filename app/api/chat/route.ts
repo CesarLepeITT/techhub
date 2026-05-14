@@ -9,13 +9,29 @@ type Product = {
   main_image_url: string | null
 }
 
+type GroqContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+
+type GroqChatMessage = {
+  role: "system" | "user" | "assistant"
+  content: string | GroqContentPart[]
+}
+
 const SYSTEM_PROMPT =
   "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. Keep responses concise. text without any bold or italic formatting"
 
 const QUERY_REWRITE_SYSTEM_PROMPT =
   "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas. La corrección de ortografía es la prioridad; asegúrate de corregir palabras mal escritas. Asegurate de poner tildes."
 
+const IMAGE_DESCRIPTION_PROMPT =
+  "Describe esta imagen para un buscador de productos tecnológicos y electrónicos. Identifica componentes, módulos, placas, sensores, cables, herramientas, etiquetas visibles, conectores, usos probables y palabras clave de búsqueda. Responde en español con una descripción breve y concreta."
+
+const IMAGE_CONTEXT_SYSTEM_PROMPT =
+  "Eres un analista de contexto para RAG de una tienda de electrónica. Convierte una descripción visual y el texto opcional del usuario en una consulta de búsqueda útil para la base de datos. Incluye nombres de componentes, categorías, usos y sinónimos relevantes. Responde solo con la consulta final, sin explicaciones."
+
 const MAX_SEARCH_QUERY_LENGTH = 400
+const MAX_IMAGE_DATA_URL_LENGTH = 4 * 1024 * 1024
 
 function sanitizeSearchQuery(input: string): string {
   return input
@@ -42,13 +58,14 @@ const env = {
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
+  groqVisionModel: process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct",
 }
 
 function detectIntent(query: string): string {
   const lower = query.toLowerCase()
   if (/(kit|project|proyecto|armar|build)/.test(lower)) return "project_build"
   if (/(precio|barato|budget|presupuesto)/.test(lower)) return "budget"
-  if (/(sensor|arduino|raspberry|iot|robot|automat)/.test(lower)) return "component_search"
+  if (/(sensor|arduino|raspberry|iot|robot|automat|imagen|foto|fotografía)/.test(lower)) return "component_search"
   return "general_shopping"
 }
 
@@ -75,12 +92,45 @@ function previewText(input: string, max = 120): string {
   return input.length > max ? `${input.slice(0, max)}…` : input
 }
 
+function summarizeDataUrl(dataUrl: string) {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)
+  return {
+    mimeType: match?.[1] ?? "unknown",
+    length: dataUrl.length,
+    preview: previewText(dataUrl, 80),
+  }
+}
+
+function prepareMessagesForLog(messages: GroqChatMessage[]): GroqChatMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content)
+      ? message.content.map((part) =>
+          part.type === "image_url"
+            ? { ...part, image_url: { url: `[base64 image omitted from log: ${JSON.stringify(summarizeDataUrl(part.image_url.url))}]` } }
+            : part,
+        )
+      : message.content,
+  }))
+}
+
 function validateRequiredEnv() {
   const missing: string[] = []
   if (!env.supabaseUrl) missing.push("NEXT_PUBLIC_SUPABASE_URL")
   if (!env.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY")
   if (!env.groqApiKey) missing.push("GROQ_API_KEY")
   return missing
+}
+
+function validateImageDataUrl(imageDataUrl: string | undefined): string | null {
+  if (!imageDataUrl) return null
+  if (!/^data:image\/(png|jpe?g|webp);base64,[a-zA-Z0-9+/=]+$/.test(imageDataUrl)) {
+    return "La imagen debe ser PNG, JPG o WebP en formato base64."
+  }
+  if (imageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+    return "La imagen es demasiado grande. Usa una imagen menor a 4 MB."
+  }
+  return null
 }
 
 async function supabaseRequest(path: string, init: RequestInit = {}) {
@@ -252,18 +302,27 @@ export async function POST(req: Request) {
       logStage("missing_env", { missingEnv })
       return NextResponse.json({ error: `Configuración incompleta: ${missingEnv.join(", ")}` }, { status: 500 })
     }
-    logStage("env_ok", { supabaseUrlConfigured: Boolean(env.supabaseUrl), groqModel: env.groqModel })
+    logStage("env_ok", {
+      supabaseUrlConfigured: Boolean(env.supabaseUrl),
+      groqModel: env.groqModel,
+      groqVisionModel: env.groqVisionModel,
+    })
 
-    const body = (await req.json()) as { message?: string; userId?: string }
+    const body = (await req.json()) as { message?: string; userId?: string; imageDataUrl?: string }
     const rawQuery = body.message?.trim() ?? ""
+    const hasImage = Boolean(body.imageDataUrl)
+    const imageValidationError = validateImageDataUrl(body.imageDataUrl)
     logStage("request_body_parsed", {
       hasMessage: Boolean(body.message),
       rawQueryLength: rawQuery.length,
       rawQueryPreview: previewText(rawQuery),
       hasUserId: Boolean(body.userId),
+      hasImage,
+      image: body.imageDataUrl ? summarizeDataUrl(body.imageDataUrl) : undefined,
     })
 
-    if (!rawQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
+    if (imageValidationError) return NextResponse.json({ error: imageValidationError }, { status: 400 })
+    if (!rawQuery && !body.imageDataUrl) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
     const userId = body.userId ?? "anonymous"
     const normalizedQuery = sanitizeSearchQuery(rawQuery)
@@ -294,9 +353,10 @@ export async function POST(req: Request) {
     let selectedProductIds: string[] = []
 
     if (products.length === 0) {
-      explanation =
-        "No encontré productos exactos. ¿Cuál es tu presupuesto, tipo de proyecto o categoría preferida?"
-      logStage("response_without_products", { explanationPreview: previewText(explanation) })
+      explanation = hasImage
+        ? "Analicé la imagen, pero no encontré productos exactos. Intenta con una foto más cercana del componente o agrega una descripción."
+        : "No encontré productos exactos. ¿Cuál es tu presupuesto, tipo de proyecto o categoría preferida?"
+      logStage("response_without_products", { explanationPreview: previewText(explanation), imageDescription, searchQuery })
     } else {
       const aiRes = await requestGroqChat({
         stagePrefix: "recommendation_groq",
@@ -362,7 +422,13 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
     })
 
     logStage("request_success", { intent: detectedIntent, productCount: recommendedProducts.length })
-    return NextResponse.json({ intent: detectedIntent, response: explanation, products: recommendedProducts })
+    return NextResponse.json({
+      intent: detectedIntent,
+      response: explanation,
+      products: recommendedProducts,
+      imageDescription: imageDescription || undefined,
+      searchQuery,
+    })
   } catch (error) {
     logStage("unhandled_exception", { message: error instanceof Error ? error.message : "unknown" })
     return NextResponse.json({ error: "Error interno" }, { status: 500 })

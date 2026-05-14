@@ -1,9 +1,10 @@
 # Flujo RAG de `api/chat` (paso a paso)
 
 1. **Entrada y validación**
-   - Recibe `message` y `userId`.
+   - Recibe `message`, `userId` y opcionalmente `imageDataUrl`.
    - Valida variables de entorno críticas (`Supabase`, `Groq`).
-   - Si `message` está vacío, corta con `400`.
+   - Si no hay texto ni imagen, corta con `400`.
+   - Si hay imagen, valida que sea un `data:image/*;base64` PNG, JPG o WebP menor a 4 MB.
 
 2. **Sanitización y corrección de consulta**
    - `sanitizeSearchQuery()` normaliza (`NFKC`), limpia caracteres de control/delimitadores y limita longitud.
@@ -15,14 +16,23 @@
    - **Primario (FTS):** llama RPC `search_products_web` (Postgres) con la consulta corregida y `websearch_to_tsquery('spanish', ...)` sobre `search_vector` (`to_tsvector`).
    - **Fallback:** si FTS falla o devuelve vacío, usa `ilike` tokenizado seguro (`tokenizeForIlikeFallback`) sobre la consulta corregida.
 
-4. **Construcción de contexto**
+4. **Corrección de consulta con LLM**
+   - `rewriteSearchQuery()` envía la consulta normalizada o el contexto generado desde imagen a Groq para corregir redacción y ortografía sin cambiar la intención.
+   - Si Groq falla o devuelve vacío, se usa la consulta previa como fallback.
+   - La consulta resultante es la que se usa para detectar intención y consultar la BD.
+
+5. **Retrieval (R de RAG)**
+   - **Primario (FTS):** llama RPC `search_products_web` (Postgres) con la consulta corregida y `websearch_to_tsquery('spanish', ...)` sobre `search_vector` (`to_tsvector`).
+   - **Fallback:** si FTS falla o devuelve vacío, usa `ilike` tokenizado seguro (`tokenizeForIlikeFallback`) sobre la consulta corregida.
+
+6. **Construcción de contexto**
    - Arma un bloque de contexto con productos recuperados (`ID`, nombre, descripción, precio, stock).
 
-5. **Generación (G de RAG)**
-   - Envía a Groq: query del usuario + contexto de productos.
+7. **Generación (G de RAG)**
+   - Envía a Groq: query original, descripción de imagen si existe, consulta corregida y contexto de productos.
    - Prompt pide recomendar en español e incluir IDs explícitos.
 
-6. **Selección de productos por IA**
+8. **Selección de productos por IA**
    - `extractRecommendedIdsFromText()` extrae UUIDs del texto de Groq.
    - Si hay IDs válidos, responde solo esos productos; si no, devuelve el set recuperado.
 
