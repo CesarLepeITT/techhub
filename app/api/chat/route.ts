@@ -19,10 +19,19 @@ type GroqChatMessage = {
 }
 
 const SYSTEM_PROMPT =
-  "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency. Keep responses concise."
+  "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. Keep responses concise. text without any bold or italic formatting"
+
+const QUERY_REWRITE_SYSTEM_PROMPT =
+  "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas. La corrección de ortografía es la prioridad; asegúrate de corregir palabras mal escritas. Asegurate de poner tildes."
 
 const QUERY_REWRITE_SYSTEM_PROMPT =
   "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas."
+
+const IMAGE_DESCRIPTION_PROMPT =
+  "Describe esta imagen para un buscador de productos tecnológicos y electrónicos. Identifica componentes, módulos, placas, sensores, cables, herramientas, etiquetas visibles, conectores, usos probables y palabras clave de búsqueda. Responde en español con una descripción breve y concreta."
+
+const IMAGE_CONTEXT_SYSTEM_PROMPT =
+  "Eres un analista de contexto para RAG de una tienda de electrónica. Convierte una descripción visual y el texto opcional del usuario en una consulta de búsqueda útil para la base de datos. Incluye nombres de componentes, categorías, usos y sinónimos relevantes. Responde solo con la consulta final, sin explicaciones."
 
 const IMAGE_DESCRIPTION_PROMPT =
   "Describe esta imagen para un buscador de productos tecnológicos y electrónicos. Identifica componentes, módulos, placas, sensores, cables, herramientas, etiquetas visibles, conectores, usos probables y palabras clave de búsqueda. Responde en español con una descripción breve y concreta."
@@ -122,10 +131,6 @@ function validateRequiredEnv() {
   return missing
 }
 
-function isGenericImagePrompt(query: string): boolean {
-  return /^(buscar|busca|encuentra|encontrar) productos relacionados con (esta|la) fotograf[ií]a$/i.test(query.trim())
-}
-
 function validateImageDataUrl(imageDataUrl: string | undefined): string | null {
   if (!imageDataUrl) return null
   if (!/^data:image\/(png|jpe?g|webp);base64,[a-zA-Z0-9+/=]+$/.test(imageDataUrl)) {
@@ -153,17 +158,20 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
   return fetch(url, { ...init, headers })
 }
 
+type GroqChatMessage = {
+  role: "system" | "user" | "assistant"
+  content: string
+}
+
 async function requestGroqChat(params: {
   stagePrefix: string
   messages: GroqChatMessage[]
   temperature: number
-  model?: string
 }) {
-  const model = params.model ?? env.groqModel
   logStage(`${params.stagePrefix}_request_start`, {
-    model,
+    model: env.groqModel,
     temperature: params.temperature,
-    messages: prepareMessagesForLog(params.messages),
+    messages: params.messages,
   })
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -173,7 +181,7 @@ async function requestGroqChat(params: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model,
+      model: env.groqModel,
       temperature: params.temperature,
       messages: params.messages,
     }),
@@ -183,84 +191,8 @@ async function requestGroqChat(params: {
   return res
 }
 
-async function readGroqTextResponse(res: Response): Promise<string> {
-  const aiJson = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-  return aiJson.choices?.[0]?.message?.content?.trim() ?? ""
-}
-
 function cleanRewrittenQuery(input: string): string {
-  return sanitizeSearchQuery(input.replace(/^(\s*["'`]+)|(["'`]+\s*)$/g, ""))
-}
-
-async function describeImageToText(imageDataUrl: string, normalizedQuery: string): Promise<string> {
-  logStage("image_description_start", { image: summarizeDataUrl(imageDataUrl), normalizedQuery })
-
-  try {
-    const res = await requestGroqChat({
-      stagePrefix: "image_description_groq",
-      temperature: 0.1,
-      model: env.groqVisionModel,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: `${IMAGE_DESCRIPTION_PROMPT}\n\nTexto opcional del usuario: ${normalizedQuery || "Sin texto adicional."}` },
-            { type: "image_url", image_url: { url: imageDataUrl } },
-          ],
-        },
-      ],
-    })
-
-    if (!res.ok) {
-      const responseText = await res.text()
-      logStage("image_description_failed", { status: res.status, error: responseText.slice(0, 300) })
-      return ""
-    }
-
-    const description = sanitizeSearchQuery(await readGroqTextResponse(res))
-    logStage("image_description_success", { description })
-    return description
-  } catch (error) {
-    logStage("image_description_exception", { message: error instanceof Error ? error.message : "unknown" })
-    return ""
-  }
-}
-
-async function buildSearchContextFromImage(params: {
-  normalizedQuery: string
-  imageDescription: string
-}): Promise<string> {
-  const fallback = sanitizeSearchQuery(`${params.normalizedQuery} ${params.imageDescription}`)
-  logStage("image_context_start", { normalizedQuery: params.normalizedQuery, imageDescription: params.imageDescription })
-
-  if (!params.imageDescription) return params.normalizedQuery
-
-  try {
-    const res = await requestGroqChat({
-      stagePrefix: "image_context_groq",
-      temperature: 0,
-      messages: [
-        { role: "system", content: IMAGE_CONTEXT_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Texto del usuario: ${params.normalizedQuery || "Sin texto adicional."}\nDescripción visual: ${params.imageDescription}`,
-        },
-      ],
-    })
-
-    if (!res.ok) {
-      const responseText = await res.text()
-      logStage("image_context_failed", { status: res.status, error: responseText.slice(0, 300), fallback })
-      return fallback
-    }
-
-    const searchContext = cleanRewrittenQuery(await readGroqTextResponse(res))
-    logStage("image_context_success", { searchContext, fallbackUsed: !searchContext })
-    return searchContext || fallback
-  } catch (error) {
-    logStage("image_context_exception", { message: error instanceof Error ? error.message : "unknown", fallback })
-    return fallback
-  }
+  return sanitizeSearchQuery(input.replace(/^(["'`]+)|(["'`]+)$/g, ""))
 }
 
 async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
@@ -272,7 +204,8 @@ async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
   try {
     const res = await requestGroqChat({
       stagePrefix: "query_rewrite_groq",
-      temperature: 0,
+      temperature: 0.25,
+      model: "llama-3.1-70b-versatile",
       messages: [
         { role: "system", content: QUERY_REWRITE_SYSTEM_PROMPT },
         { role: "user", content: normalizedQuery },
@@ -285,7 +218,8 @@ async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
       return normalizedQuery
     }
 
-    const rawOutput = await readGroqTextResponse(res)
+    const aiJson = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const rawOutput = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
     const rewrittenQuery = cleanRewrittenQuery(rawOutput)
     logStage("query_rewrite_raw_output", { aiOutput: rawOutput })
 
@@ -401,45 +335,17 @@ export async function POST(req: Request) {
 
     const userId = body.userId ?? "anonymous"
     const normalizedQuery = sanitizeSearchQuery(rawQuery)
-    const queryForImageContext = hasImage && isGenericImagePrompt(normalizedQuery) ? "" : normalizedQuery
     logStage("query_normalized", {
       rawQueryLength: rawQuery.length,
       normalizedQueryLength: normalizedQuery.length,
       normalizedQuery,
-      queryForImageContext,
-      ignoredGenericImagePrompt: hasImage && normalizedQuery !== queryForImageContext,
     })
 
-    let imageDescription = ""
-    let searchQuery = ""
+    if (!normalizedQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
-    if (body.imageDataUrl) {
-      imageDescription = await describeImageToText(body.imageDataUrl, queryForImageContext)
-      if (!imageDescription && !queryForImageContext) {
-        const explanation = "No pude interpretar la fotografía. Intenta tomarla con más luz o agrega una descripción del componente."
-        logStage("image_description_unavailable", { explanation })
-        return NextResponse.json({
-          intent: "component_search",
-          response: explanation,
-          products: [],
-          searchQuery: "",
-        })
-      }
-
-      const imageSearchContext = await buildSearchContextFromImage({
-        normalizedQuery: queryForImageContext,
-        imageDescription,
-      })
-      searchQuery = await rewriteSearchQuery(imageSearchContext || imageDescription || queryForImageContext)
-    } else {
-      if (!normalizedQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
-      searchQuery = await rewriteSearchQuery(normalizedQuery)
-    }
-
-    if (!searchQuery) return NextResponse.json({ error: "No fue posible interpretar la consulta" }, { status: 400 })
-
+    const searchQuery = await rewriteSearchQuery(normalizedQuery)
     const detectedIntent = detectIntent(searchQuery)
-    logStage("intent_detected", { userId, detectedIntent, queryUsedForIntent: searchQuery, hasImage })
+    logStage("intent_detected", { userId, detectedIntent, queryUsedForIntent: searchQuery })
 
     let products: Product[] = []
     try {
@@ -468,9 +374,8 @@ export async function POST(req: Request) {
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
-            content: `User query original: ${rawQuery || "Búsqueda por imagen"}
-Descripción de imagen: ${imageDescription || "No aplica"}
-Consulta corregida para búsqueda: ${searchQuery}
+            content: `User query original: ${rawQuery}
+User query corregida para búsqueda: ${searchQuery}
 
 Product context:
 ${context}
@@ -486,7 +391,8 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
         logStage("recommendation_groq_failed", { status: aiRes.status, error: responseText.slice(0, 200) })
         explanation = `Encontré ${products.length} producto(s) relevante(s). ¿Quieres más detalles?`
       } else {
-        explanation = await readGroqTextResponse(aiRes)
+        const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
+        explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
         logStage("recommendation_groq_raw_output", { aiOutput: explanation })
         if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
         selectedProductIds = extractRecommendedIdsFromText(explanation, products)
@@ -518,9 +424,6 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
       userId,
       rawQuery,
       normalizedQuery,
-      hasImage,
-      image: body.imageDataUrl ? summarizeDataUrl(body.imageDataUrl) : undefined,
-      imageDescription,
       searchQuery,
       detectedIntent,
       explanation,
