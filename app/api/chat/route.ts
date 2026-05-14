@@ -221,27 +221,19 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   const select = "id,name,short_description,retail_price,stock,main_image_url"
   if (!sanitized.tsQuery) return []
 
-  // 1) FTS (PostgreSQL websearch_to_tsquery/spanish) via RPC
-  const ftsRes = await supabaseRequest("rpc/search_products_fts", {
-    method: "POST",
-    body: JSON.stringify({
-      q: sanitized.tsQuery,
-      max_results: MAX_RESULTS,
-    }),
-  })
+  // 1) Try full-text search
+  // Usamos .wfts. para búsqueda de frases
+  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=${MAX_RESULTS}`
+  const ftsRes = await supabaseRequest(ftsPath)
 
   if (ftsRes.ok) {
     const rows = (await ftsRes.json()) as Product[]
     if (rows.length > 0) return rows.slice(0, MAX_RESULTS)
-    logStage("retrieve_fts_empty", { query: cleanQuery, tsQuery: sanitized.tsQuery })
-  } else {
-    const ftsError = await ftsRes.text()
-    logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsError.slice(0, 250) })
+    logStage("retrieve_fts_empty", { query: cleanQuery })
   }
 
-  // 2) Fallback ILIKE defensivo (solo para texto corto o error FTS)
-  if (sanitized.isLong) return []
-  const { normalized, tokens, phrase } = extractSearchTerms(sanitized.normalized)
+  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
+  const { normalized, tokens, phrase } = extractSearchTerms(cleanQuery)
   if (tokens.length === 0) {
     logStage("retrieve_no_meaningful_terms", { query: cleanQuery })
     return []
@@ -258,7 +250,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   })
 
   const orFilters = [...phraseFilters, ...tokenFilters].join(",")
-  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=${MAX_RESULTS}`
+  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
   const ilikeRes = await supabaseRequest(ilikePath)
 
   if (!ilikeRes.ok) {
