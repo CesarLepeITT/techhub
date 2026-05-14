@@ -78,9 +78,6 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     const rows = (await ftsRes.json()) as Product[]
     if (rows.length > 0) return rows.slice(0, 5)
     logStage("retrieve_fts_empty", { query: cleanQuery })
-  } else {
-    const ftsErrorBody = await ftsRes.text()
-    logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
   }
 
   // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
@@ -108,8 +105,23 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
   })
 
-  const orFilters = [...phraseFilters, ...tokenFilters].join(",")
-  const ilikePath = `products?select=${select}&is_active=eq.1&or=(${orFilters})&limit=5`
+  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
+  const normalized = cleanQuery
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, " ")
+
+  const tokens = Array.from(new Set(normalized.split(/\s+/).filter((t) => t.length >= 3))).slice(0, 5)
+
+  const phraseLike = encodeURIComponent(`%${normalized}%`)
+  const tokenFilters = tokens.flatMap((token) => {
+    const like = encodeURIComponent(`%${token}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+
+  const orFilters = [`name.ilike.${phraseLike}`, `short_description.ilike.${phraseLike}`, `tags.ilike.${phraseLike}`, ...tokenFilters].join(",")
+  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
   const ilikeRes = await supabaseRequest(ilikePath)
 
   if (!ilikeRes.ok) {
