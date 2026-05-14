@@ -16,7 +16,10 @@ const QUERY_REWRITE_SYSTEM_PROMPT =
   "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas. La corrección de ortografía es la prioridad; asegúrate de corregir palabras mal escritas. Asegurate de poner tildes."
 
 const IMAGE_DESCRIPTION_SYSTEM_PROMPT =
-  "Eres un asistente visual para una tienda de tecnología y electrónica. Describe en español, de forma breve y útil para búsqueda, lo que se ve en la imagen. Enfócate en componentes, dispositivos, cables, módulos, herramientas, marcas visibles, colores, conectores, estado físico y posibles productos similares. No inventes detalles no visibles."
+"Eres un extractor de etiquetas técnicas para una tienda de electrónica. Tu objetivo es identificar el objeto principal de la imagen para una búsqueda en base de datos. Responde ÚNICAMENTE con el nombre del producto y 2 o 3 palabras clave técnicas. Ejemplo de salida: Teléfono celular. Smartphone. Pantalla táctil. Ejemplo de salida: Laptop. Computadora portátil. Intel Core. No uses oraciones completas, no describas el fondo ni el estado físico o a las personas alrededor."
+
+const MAX_SEARCH_QUERY_LENGTH = 400
+const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000
 
 const MAX_SEARCH_QUERY_LENGTH = 400
 const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000
@@ -30,53 +33,30 @@ function sanitizeSearchQuery(input: string): string {
     .slice(0, MAX_SEARCH_QUERY_LENGTH)
 }
 
-function tokenizeForIlikeFallback(input: string): string[] {
-  const fallbackStopWords = [
-    "a",
-    "al",
-    "algo",
-    "con",
-    "de",
-    "del",
-    "descripción",
-    "el",
-    "en",
-    "imagen",
-    "la",
-    "las",
-    "lo",
-    "los",
-    "para",
-    "producto",
-    "productos",
-    "que",
-    "quiero",
-    "similar",
-    "similares",
-    "un",
-    "una",
-    "unos",
-    "unas",
-  ]
+const FALLBACK_STOP_WORDS = new Set([
+  "con", "para", "de", "del", "la", "las", "el", "los", "un", "una", 
+  "unos", "unas", "y", "o", "en", "por", "que", "qué", "sobre", "imagen", 
+  "adjunta", "descripcion", "similar", "quiero", "algo", "estos", "estás"
+]);
 
+function tokenizeForIlikeFallback(input: string): string[] {
   return [
     ...new Set(
       input
         .toLowerCase()
         .replace(/[^\p{L}\p{N}\s]/gu, " ")
         .split(/\s+/)
-        .filter((token) => token.length >= 3 && !fallbackStopWords.includes(token)),
+        .filter((token) => token.length >= 3 && !FALLBACK_STOP_WORDS.has(token)),
     ),
   ].slice(0, 5)
 }
-
 const env = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
-  groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
-  groqVisionModel: process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct",
+  groqModel: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile", 
+  groqVisionModel: process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct", 
 }
 
 function detectIntent(query: string): string {
@@ -219,7 +199,7 @@ async function describeImageForSearch(imageDataUrl: string, originalQuery: strin
     const res = await requestGroqChat({
       stagePrefix: "image_description_groq",
       model: env.groqVisionModel,
-      temperature: 0.2,
+      temperature: 0.1,
       messages: [
         { role: "system", content: IMAGE_DESCRIPTION_SYSTEM_PROMPT },
         {
@@ -274,7 +254,7 @@ async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
     const res = await requestGroqChat({
       stagePrefix: "query_rewrite_groq",
       temperature: 0.25,
-      model: "llama-3.1-70b-versatile",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: QUERY_REWRITE_SYSTEM_PROMPT },
         { role: "user", content: normalizedQuery },
