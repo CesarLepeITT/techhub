@@ -6,6 +6,7 @@ type Product = {
   short_description: string | null
   retail_price: number
   stock: number
+  image_url: string | null
   main_image_url: string | null
 }
 
@@ -95,7 +96,7 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 
 async function retrieveProducts(query: string): Promise<Product[]> {
   const cleanQuery = sanitizeSearchQuery(query)
-  const select = "id,name,short_description,retail_price,stock,main_image_url"
+  const select = "id,name,short_description,retail_price,stock,image_url,main_image_url"
   logStage("retrieve_start", {
     rawQueryLength: query.length,
     cleanQueryLength: cleanQuery.length,
@@ -246,12 +247,13 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
       returnedCount: productsToReturn.length,
     })
 
+    const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=400&fit=crop"
     const recommendedProducts = productsToReturn.map((p) => ({
       id: p.id,
       name: p.name,
       retail_price: p.retail_price,
       stock: p.stock,
-      main_image_url: p.main_image_url,
+      image_url: p.image_url || p.main_image_url || FALLBACK_IMAGE,
     }))
     logStage("response_products_built", { recommendedCount: recommendedProducts.length })
 

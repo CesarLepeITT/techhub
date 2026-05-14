@@ -92,9 +92,10 @@ export function ProductCard({
       <Link href={`/producto/${id}`} className="cursor-pointer">
         <div className="relative aspect-square overflow-hidden bg-secondary/30">
           <Image
-            src={image}
+            src={image || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=400&fit=crop"}
             alt={name}
             fill
+            unoptimized
             className="object-cover transition-transform duration-300 group-hover:scale-105"
           />
         </div>
