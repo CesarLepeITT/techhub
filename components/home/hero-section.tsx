@@ -60,6 +60,39 @@ function stripIdsFromAssistantText(input: string): string {
     .trim()
 }
 
+
+function CapturedImagePreview({
+  imageData,
+  description,
+  onRemove,
+  className = "",
+}: {
+  imageData: string
+  description: string
+  onRemove: () => void
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-3 text-left">
+        <img src={imageData} alt="Foto adjunta" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">Foto adjunta</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
+          aria-label="Quitar foto"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function MessageBubble({ message }: { message: Message }) {
   if (message.type === "user") {
     return (
@@ -100,16 +133,27 @@ export function HeroSection() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
 
   const handleSubmit = async (prompt: string) => {
-    if (!prompt.trim() || isTyping) return
-    setMessages((prev) => [...prev, { id: Date.now().toString(), type: "user", content: prompt, timestamp: new Date() }])
+    const imageData = capturedImage
+    const trimmedPrompt = prompt.trim()
+    if ((!trimmedPrompt && !imageData) || isTyping) return
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        type: "user",
+        content: imageData ? `${trimmedPrompt || "Imagen adjunta"} (con imagen)` : trimmedPrompt,
+        timestamp: new Date(),
+      },
+    ])
     setInputValue("")
+    setCapturedImage(null)
     setIsTyping(true)
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: prompt }),
+        body: JSON.stringify({ message: trimmedPrompt, ...(imageData ? { imageData } : {}) }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || "Error desconocido")
@@ -167,29 +211,12 @@ export function HeroSection() {
               ) : (
                 <div className="relative rounded-xl border border-border bg-card p-1.5 shadow-elevated">
                   {capturedImage && (
-                    <div className="border-b border-border bg-card p-4">
-                      <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/40 p-3 text-left">
-                        <img
-                          src={capturedImage}
-                          alt="Foto adjunta"
-                          className="h-16 w-16 shrink-0 rounded-lg object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground">Foto adjunta</p>
-                          <p className="text-xs text-muted-foreground">
-                            Se conserva aquí para usarla en la búsqueda visual.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setCapturedImage(null)}
-                          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
-                          aria-label="Quitar foto"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
+                    <CapturedImagePreview
+                      imageData={capturedImage}
+                      description="Se conserva aquí para usarla en la búsqueda visual."
+                      onRemove={() => setCapturedImage(null)}
+                      className="border-b border-border bg-card p-4"
+                    />
                   )}
                   <div className="flex flex-col gap-3 rounded-lg bg-card px-4 py-3 sm:flex-row sm:items-center">
                     <SmartInput
@@ -205,7 +232,7 @@ export function HeroSection() {
                     <Button
                       type="submit"
                       className="rounded-xl bg-primary px-5 hover:bg-primary/90 cursor-pointer"
-                      disabled={!inputValue.trim() || isTyping}
+                      disabled={(!inputValue.trim() && !capturedImage) || isTyping}
                       onClick={() => handleSubmit(inputValue)}
                     >
                       <Send className="h-4 w-4" />
@@ -260,27 +287,11 @@ export function HeroSection() {
                 ) : (
                   <div className="space-y-3">
                     {capturedImage && (
-                      <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3 text-left">
-                        <img
-                          src={capturedImage}
-                          alt="Foto adjunta"
-                          className="h-16 w-16 shrink-0 rounded-lg object-cover"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground">Foto adjunta</p>
-                          <p className="text-xs text-muted-foreground">
-                            Se conserva aquí para usarla en la búsqueda visual.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setCapturedImage(null)}
-                          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground cursor-pointer"
-                          aria-label="Quitar foto"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
+                      <CapturedImagePreview
+                        imageData={capturedImage}
+                        description="Se conserva aquí para usarla en la búsqueda visual."
+                        onRemove={() => setCapturedImage(null)}
+                      />
                     )}
                     <form
                       onSubmit={(e) => {
@@ -303,7 +314,7 @@ export function HeroSection() {
                         type="submit"
                         size="icon"
                         className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 cursor-pointer"
-                        disabled={!inputValue.trim() || isTyping}
+                        disabled={(!inputValue.trim() && !capturedImage) || isTyping}
                       >
                         <Send className="h-4 w-4" />
                       </Button>
