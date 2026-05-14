@@ -879,3 +879,59 @@ export async function getAllProducts() {
     error,
   }
 }
+
+export async function registerUser(userData: {
+  nombre: string
+  email: string
+  password: string
+  telefono: string
+  role?: "buyer" | "seller"
+  storeName?: string
+}) {
+  const role = userData.role || "buyer"
+  const source = (userData.nombre.split(" ")[0] || "usuario").toLowerCase()
+  const base = source.replace(/[^a-z0-9]+/g, "").slice(0, 18) || "usuario"
+  const username = `${base}${Math.floor(Math.random() * 10000)}`
+
+  const { data, error } = await supabase
+    .from("users")
+    .insert({
+      username,
+      email: userData.email,
+      password_hash: userData.password,
+      full_name: userData.nombre,
+      phone: userData.telefono,
+      role,
+    })
+    .select("id, email, full_name, phone, role")
+    .single()
+
+  if (error) {
+    return { data: null, error }
+  }
+
+  if (role === "seller" && userData.storeName && data) {
+    const { error: sellerError } = await supabase.from("sellers").insert({
+      user_id: data.id,
+      store_name: userData.storeName,
+      location: "",
+      description: "",
+    })
+    if (sellerError) {
+      return { data: null, error: sellerError }
+    }
+  }
+
+  return { data, error: null }
+}
+
+export async function loginUser(email: string, password: string) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, email, full_name, phone, role")
+    .eq("email", email)
+    .eq("password_hash", password)
+    .single()
+
+  return { data, error }
+}

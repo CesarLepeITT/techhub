@@ -20,15 +20,9 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { supabase } from "@/lib/supabase"
+import { registerUser } from "@/lib/supabase-queries"
 
 type UserType = "usuario" | "vendedor" | null
-
-function createUsernameSeed(email: string, name: string) {
-  const source = (name || email.split("@")[0] || "usuario").toLowerCase()
-  const base = source.replace(/[^a-z0-9]+/g, "").slice(0, 18) || "usuario"
-  return `${base}${Math.floor(Math.random() * 10000)}`
-}
 
 export default function RegistroPage() {
   const router = useRouter()
@@ -107,64 +101,27 @@ export default function RegistroPage() {
 
     setIsLoading(true)
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data, error } = await registerUser({
+        nombre: formData.nombre,
         email: formData.email,
         password: formData.password,
+        telefono: formData.telefono,
+        role: userType === "vendedor" ? "seller" : "buyer",
+        storeName: userType === "vendedor" ? formData.storeName : undefined,
       })
 
-      if (authError) {
-        setError(authError.message)
+      if (error) {
+        setError(error.message || "Error al crear la cuenta")
         setIsLoading(false)
         return
       }
 
-      if (!authData.user) {
+      if (!data) {
         setError("Error al crear la cuenta")
         setIsLoading(false)
         return
       }
 
-      const role = userType === "vendedor" ? "seller" : "buyer"
-      const username = createUsernameSeed(formData.email, formData.nombre)
-
-      const { data: profileData, error: profileError } = await supabase
-        .from("users")
-        .insert({
-          auth_user_id: authData.user.id,
-          username,
-          email: formData.email,
-          full_name: formData.nombre,
-          phone: formData.telefono,
-          role,
-        })
-        .select("id")
-        .single()
-
-      if (profileError) {
-        setError(profileError.message)
-        setIsLoading(false)
-        return
-      }
-
-      if (userType === "vendedor" && profileData) {
-        const { error: storeError } = await supabase
-          .from("sellers")
-          .insert({
-            user_id: profileData.id,
-            store_name: formData.storeName,
-            location: formData.ubicacion,
-            description: "",
-            is_verified: false,
-          })
-
-        if (storeError) {
-          setError(storeError.message)
-          setIsLoading(false)
-          return
-        }
-      }
-
-      // Redirect to login or dashboard
       router.push("/iniciar-sesion?registered=true")
     } catch (err) {
       setError("Error inesperado. Por favor intenta de nuevo")

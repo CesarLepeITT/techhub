@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation"
 import { ArrowLeft, User, Store, Mail, Lock, Eye, EyeOff, Sparkles, AlertCircle, Loader } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { supabase } from "@/lib/supabase"
+import { loginUser } from "@/lib/supabase-queries"
+import { useSession } from "@/components/SessionProvider"
 
 type UserType = "usuario" | "comprador" | null
 
@@ -38,20 +39,31 @@ export default function IniciarSesionPage() {
 
     setIsLoading(true)
     try {
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      const { data, error: loginError } = await loginUser(email, password)
 
-      if (loginError) {
-        setError(loginError.message)
+      if (loginError || !data) {
+        setError("Email o contraseña incorrectos")
         setIsLoading(false)
         return
       }
 
-      if (data.user) {
-        router.push("/")
+      const user = {
+        id: data.id,
+        email: data.email,
+        nombre: data.full_name || data.email,
+        telefono: data.phone || "",
+        role: data.role,
+        user_type:
+          data.role === "seller"
+            ? "vendedor"
+            : data.role === "admin"
+              ? "admin"
+              : "usuario",
       }
+
+      localStorage.setItem("session", JSON.stringify(user))
+      window.dispatchEvent(new Event("session-update"))
+      router.push("/")
     } catch (err) {
       setError("Error al iniciar sesión. Por favor intenta de nuevo")
       console.error(err)

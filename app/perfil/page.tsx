@@ -80,9 +80,7 @@ export default function PerfilPage() {
   const [editData, setEditData] = useState(userData)
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/iniciar-sesion")
-    } else if (user) {
+    if (!authLoading && user) {
       setUserData({
         nombre: user.nombre || "",
         email: user.email || "",
@@ -228,6 +226,20 @@ export default function PerfilPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background gap-4">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-foreground mb-2">No autorizado</h1>
+          <p className="text-muted-foreground mb-4">Por favor inicia sesión para ver tu perfil</p>
+          <Link href="/iniciar-sesion">
+            <Button>Ir a iniciar sesión</Button>
+          </Link>
+        </div>
       </div>
     )
   }

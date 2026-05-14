@@ -42,9 +42,7 @@ export default function CarritoPage() {
   const [error, setError] = useState("")
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/iniciar-sesion")
-    } else if (user) {
+    if (!authLoading && user) {
       loadCart()
     }
   }, [user, authLoading])
