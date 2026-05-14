@@ -42,21 +42,44 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const legacySessionCookie = request.cookies.get("techhub_session")?.value
+  let fallbackSession: { id?: string; role?: string } | null = null
+
+  if (legacySessionCookie) {
+    try {
+      fallbackSession = JSON.parse(decodeURIComponent(legacySessionCookie)) as {
+        id?: string
+        role?: string
+      }
+    } catch {
+      fallbackSession = null
+    }
+  }
+
+  const authenticatedUserId = user?.id ?? fallbackSession?.id ?? null
+  const authenticatedRole = user ? null : fallbackSession?.role ?? null
+
   const protectedRoutes = ["/perfil", "/carrito", "/admin"]
   const isProtectedRoute = protectedRoutes.some((route) => request.nextUrl.pathname.startsWith(route))
 
-  if (isProtectedRoute && !user) {
+  if (isProtectedRoute && !authenticatedUserId) {
     return NextResponse.redirect(new URL("/iniciar-sesion", request.url))
   }
 
-  if (request.nextUrl.pathname.startsWith("/admin") && user) {
-    const { data: userData } = await supabase
-      .from("users")
-      .select("role")
-      .eq("auth_user_id", user.id)
-      .single()
+  if (request.nextUrl.pathname.startsWith("/admin") && authenticatedUserId) {
+    let isAdmin = authenticatedRole === "admin"
 
-    if (userData?.role !== "admin") {
+    if (user) {
+      const { data: userData } = await supabase
+        .from("users")
+        .select("role")
+        .eq("auth_user_id", user.id)
+        .single()
+
+      isAdmin = userData?.role === "admin"
+    }
+
+    if (!isAdmin) {
       return NextResponse.redirect(new URL("/", request.url))
     }
   }

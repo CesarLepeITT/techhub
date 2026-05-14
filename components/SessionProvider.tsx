@@ -1,7 +1,6 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
 
 interface User {
   id: string
@@ -62,6 +61,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setUser(null)
     setIsAuthenticated(false)
     localStorage.removeItem("session")
+    document.cookie = "techhub_session=; path=/; max-age=0; samesite=lax"
     window.dispatchEvent(new Event("session-update"))
   }
 

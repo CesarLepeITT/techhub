@@ -199,28 +199,32 @@ export async function POST(req: Request) {
       main_image_url: p.main_image_url,
     }))
 
-    await supabaseRequest("assistant_queries", {
-      method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: JSON.stringify([
-        {
-          user_id: userId,
-          query: rawQuery,
-          detected_intent: detectedIntent,
-          explanation,
-          recommended_products_json: {
-            product_ids: recommendedProducts.map((p) => p.id),
-            products: recommendedProducts,
+    try {
+      await supabaseRequest("assistant_queries", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify([
+          {
+            user_id: userId,
+            query: rawQuery,
+            detected_intent: detectedIntent,
+            explanation,
+            recommended_products_json: {
+              product_ids: recommendedProducts.map((p) => p.id),
+              products: recommendedProducts,
+            },
           },
-        },
-      ]),
-    })
+        ]),
+      })
 
-    await logEvent(userId, "assistant_query", {
-      query: rawQuery,
-      intent: detectedIntent,
-      recommended_count: recommendedProducts.length,
-    })
+      await logEvent(userId, "assistant_query", {
+        query: rawQuery,
+        intent: detectedIntent,
+        recommended_count: recommendedProducts.length,
+      })
+    } catch (logError) {
+      logStage("logging_failed", { message: logError instanceof Error ? logError.message : "unknown" })
+    }
 
     return NextResponse.json({ intent: detectedIntent, response: explanation, products: recommendedProducts })
   } catch (error) {

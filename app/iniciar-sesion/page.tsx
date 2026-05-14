@@ -7,7 +7,6 @@ import { ArrowLeft, User, Store, Mail, Lock, Eye, EyeOff, Sparkles, AlertCircle,
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { loginUser } from "@/lib/supabase-queries"
-import { useSession } from "@/components/SessionProvider"
 
 type UserType = "usuario" | "comprador" | null
 
@@ -62,6 +61,12 @@ export default function IniciarSesionPage() {
       }
 
       localStorage.setItem("session", JSON.stringify(user))
+      document.cookie = `techhub_session=${encodeURIComponent(
+        JSON.stringify({
+          id: user.id,
+          role: user.role,
+        })
+      )}; path=/; max-age=2592000; samesite=lax`
       window.dispatchEvent(new Event("session-update"))
       router.push("/")
     } catch (err) {
