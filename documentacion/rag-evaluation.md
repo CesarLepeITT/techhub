@@ -29,3 +29,5 @@ Optional env vars:
 ## Notes
 - Query set and expected relevance terms are in `scripts/rag-eval.ts`.
 - This is a lightweight heuristic gate for regressions, not a full benchmark harness.
+- Current retrieval behavior in `/api/chat` targets a **maximum of 5 products** and can return fewer (including 0) if there is no meaningful match.
+- See `documentacion/rag-flexible-prompts.md` for flexible prompt/query behavior.
