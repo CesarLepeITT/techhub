@@ -258,6 +258,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
     return []
   }
+}
 
   const rows = (await ilikeRes.json()) as Product[]
   return rows.slice(0, MAX_RESULTS)
