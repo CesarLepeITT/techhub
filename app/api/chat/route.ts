@@ -112,13 +112,11 @@ async function retrieveProducts(query: string): Promise<Product[]> {
       method: "POST",
       body: JSON.stringify({ raw_query: cleanQuery, max_results: 5 }),
     })
-    logStage("retrieve_fts_response", { status: ftsRes.status, ok: ftsRes.ok })
 
     if (ftsRes.ok) {
       const rows = (await ftsRes.json()) as Product[]
       logStage("retrieve_ok_fts", { count: rows.length, queryLength: cleanQuery.length })
       if (rows.length > 0) return rows
-      logStage("retrieve_fts_empty", { queryLength: cleanQuery.length })
     } else {
       const errorBody = await ftsRes.text()
       logStage("retrieve_fts_failed", { status: ftsRes.status, error: errorBody.slice(0, 200) })
@@ -128,12 +126,10 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   }
 
   const tokens = tokenizeForIlikeFallback(cleanQuery)
-  logStage("retrieve_fallback_tokens", { tokens, tokenCount: tokens.length })
   if (tokens.length === 0) return []
 
   const orFilters = tokens.map((token) => `name.ilike.%${token}%`).join(",")
   const path = `products?select=${select}&or=(${encodeURIComponent(orFilters)})&limit=5&is_active=eq.true`
-  logStage("retrieve_fallback_query", { orFilters, encodedPathPreview: previewText(path, 180) })
 
   try {
     const res = await supabaseRequest(path)
@@ -237,11 +233,7 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
 
         // Remove UUID patterns from the explanation
         explanation = explanation.replace(/\s*\([a-f0-9\-]{36}\)\s*/gi, "")
-        logStage("groq_success", {
-          explanationLength: explanation.length,
-          explanationPreview: previewText(explanation),
-          selectedProductIdsCount: selectedProductIds.length,
-        })
+        logStage("groq_success", { explanationLength: explanation.length, explanationPreview: previewText(explanation) })
       }
     }
 
