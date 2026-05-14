@@ -217,50 +217,51 @@ function sanitizeSearchQuery(input: string): { normalized: string; tsQuery: stri
 async function retrieveProducts(query: string): Promise<Product[]> {
   const MAX_RESULTS = 5
   const cleanQuery = query.trim()
+  const sanitized = sanitizeSearchQuery(cleanQuery)
+  const select = "id,name,short_description,retail_price,stock,main_image_url"
+  if (!sanitized.tsQuery) return []
 
-  try {
-    const sanitized = sanitizeSearchQuery(cleanQuery)
-    const select = "id,name,short_description,retail_price,stock,main_image_url"
-    if (!sanitized.tsQuery) return []
+  // 1) Try full-text search
+  // Usamos .wfts. para búsqueda de frases
+  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=${MAX_RESULTS}`
+  const ftsRes = await supabaseRequest(ftsPath)
 
-    const ftsRes = await supabaseRequest("rpc/search_products_fts", {
-      method: "POST",
-      body: JSON.stringify({ q: sanitized.tsQuery, max_results: MAX_RESULTS }),
-    })
+  if (ftsRes.ok) {
+    const rows = (await ftsRes.json()) as Product[]
+    if (rows.length > 0) return rows.slice(0, MAX_RESULTS)
+    logStage("retrieve_fts_empty", { query: cleanQuery })
+  }
 
-    if (ftsRes.ok) {
-      const rows = (await ftsRes.json()) as Product[]
-      if (rows.length > 0) return rows.slice(0, MAX_RESULTS)
-      logStage("retrieve_fts_empty", { query: cleanQuery, tsQuery: sanitized.tsQuery })
-    } else {
-      const ftsError = await ftsRes.text()
-      logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsError.slice(0, 250) })
-    }
-
-    if (sanitized.isLong) return []
-    const { normalized, tokens, phrase } = extractSearchTerms(sanitized.normalized)
-    if (tokens.length === 0) return []
-
-    const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized, phrase].filter((p) => p.length >= 3)))
-    const phraseFilters = phraseCandidates.flatMap((value) => {
-      const like = encodeURIComponent(`%${value}%`)
-      return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
-    })
-    const tokenFilters = tokens.flatMap((token) => {
-      const like = encodeURIComponent(`%${token}%`)
-      return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
-    })
-
-    const ilikePath = `products?select=${select}&or=(${[...phraseFilters, ...tokenFilters].join(",")})&limit=${MAX_RESULTS}`
-    const ilikeRes = await supabaseRequest(ilikePath)
-    if (!ilikeRes.ok) return []
-
-    const rows = (await ilikeRes.json()) as Product[]
-    return rows.slice(0, MAX_RESULTS)
-  } catch (error) {
-    logStage("retrieve_products_exception", { query, message: error instanceof Error ? error.message : "unknown" })
+  // 2) Fallback flexible: ILIKE por frase + tokens para no exigir coincidencia exacta
+  const { normalized, tokens, phrase } = extractSearchTerms(cleanQuery)
+  if (tokens.length === 0) {
+    logStage("retrieve_no_meaningful_terms", { query: cleanQuery })
     return []
   }
+
+  const phraseCandidates = Array.from(new Set([cleanQuery.toLowerCase(), normalized, phrase].filter((p) => p.length >= 3)))
+  const phraseFilters = phraseCandidates.flatMap((phrase) => {
+    const like = encodeURIComponent(`%${phrase}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+  const tokenFilters = tokens.flatMap((token) => {
+    const like = encodeURIComponent(`%${token}%`)
+    return [`name.ilike.${like}`, `short_description.ilike.${like}`, `tags.ilike.${like}`]
+  })
+
+  const orFilters = [...phraseFilters, ...tokenFilters].join(",")
+  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
+  const ilikeRes = await supabaseRequest(ilikePath)
+
+  if (!ilikeRes.ok) {
+    const ilikeErrorBody = await ilikeRes.text()
+    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
+    return []
+  }
+}
+
+  const rows = (await ilikeRes.json()) as Product[]
+  return rows.slice(0, MAX_RESULTS)
 }
 
 function rerankProducts(products: Product[], terms: string[]) {
@@ -311,8 +312,7 @@ export async function POST(req: Request) {
 
     let products: Product[] = []
     try {
-      const candidateResults = await Promise.allSettled(retrievalQueries.map((q) => retrieveProducts(q)))
-      const candidates = candidateResults.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []))
+      const candidates = await Promise.all(retrievalQueries.map((q) => retrieveProducts(q)))
       const merged = Array.from(new Map(candidates.flat().map((p) => [p.id, p])).values())
       const rankTerms = [
         ...refined.keywords,
