@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Sparkles, Send, ArrowRight, Package, Zap, GraduationCap, Puzzle, RefreshCw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SmartInput } from "@/components/ui/smart-input"
@@ -62,6 +62,12 @@ export default function AssistantPage() {
   const [isTyping, setIsTyping] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = messagesContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, isTyping])
 
   const handleSubmit = async (prompt: string) => {
     const imageData = capturedImage
@@ -116,8 +122,8 @@ export default function AssistantPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
-      <main className="flex flex-1 flex-col pb-8 pt-20 md:pt-24">
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 sm:px-6">
+      <main className="flex flex-1 min-h-0 flex-col pb-8 pt-20 md:pt-24">
+        <div className="mx-auto flex w-full max-w-4xl flex-1 min-h-0 flex-col px-4 sm:px-6">
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center py-12">
               <div className="mb-8 text-center"><div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 shadow-soft"><Sparkles className="h-8 w-8 text-primary" /></div><h1 className="mb-2 text-2xl font-bold text-foreground sm:text-3xl">Asistente de compras IA</h1></div>
@@ -164,8 +170,8 @@ export default function AssistantPage() {
               <div className="w-full max-w-2xl"><p className="mb-4 text-center text-sm font-medium text-muted-foreground">Prueba con estos ejemplos</p><div className="grid gap-3 sm:grid-cols-2">{suggestedPrompts.map((prompt, index) => <button key={index} className="group flex items-center gap-3 rounded-lg bg-card p-4 text-left shadow-soft transition-lift" onClick={() => handleSubmit(prompt.text)}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground"><prompt.icon className="h-5 w-5" /></div><span className="text-sm text-foreground">{prompt.text}</span><ArrowRight className="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /></button>)}</div></div>
             </div>
           ) : (
-            <div className="flex flex-1 flex-col"><div className="flex-1 space-y-6 py-6">{messages.map((message) => <MessageBubble key={message.id} message={message} />)}{isTyping && <div className="flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10"><Sparkles className="h-5 w-5 text-primary animate-pulse-soft" /></div><div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft"><div className="flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin text-primary" /><span className="text-sm text-muted-foreground">Buscando productos...</span></div></div></div>}</div>
-              <div className="sticky bottom-0 bg-gradient-to-t from-background via-background to-transparent pb-6 pt-4">
+            <div className="flex flex-1 min-h-0 flex-col"><div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto space-y-6 py-6">{messages.map((message) => <MessageBubble key={message.id} message={message} />)}{isTyping && <div className="flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10"><Sparkles className="h-5 w-5 text-primary animate-pulse-soft" /></div><div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft"><div className="flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin text-primary" /><span className="text-sm text-muted-foreground">Buscando productos...</span></div></div></div>}</div>
+              <div className="bg-gradient-to-t from-background via-background to-transparent pb-6 pt-4">
                 <div className="space-y-3 rounded-lg bg-card/80 px-4 py-3">
                   {capturedImage && (
                     <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/30 p-3 text-left">

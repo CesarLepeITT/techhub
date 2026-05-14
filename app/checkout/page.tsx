@@ -154,13 +154,6 @@ export default function CheckoutPage() {
     e.preventDefault()
     if (!user) return
 
-    const scrollY = window.scrollY
-    const restoreScroll = () => {
-      window.requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, left: window.scrollX, behavior: "auto" })
-      })
-    }
-
     setIsProcessing(true)
     setError("")
 
@@ -228,12 +221,11 @@ export default function CheckoutPage() {
 
       await clearCart(user.id)
       setOrderId(orderRes.data.id)
+      window.scrollTo({ top: 0 })
       setCurrentStep("confirmation")
-      restoreScroll()
     } catch (submitError) {
       setError("Error al procesar la orden")
       console.error(submitError)
-      restoreScroll()
     } finally {
       setIsProcessing(false)
     }
