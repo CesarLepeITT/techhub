@@ -146,6 +146,7 @@ async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
     const res = await requestGroqChat({
       stagePrefix: "query_rewrite_groq",
       temperature: 0.3,
+      model: "llama-3.1-70b-versatile",
       messages: [
         { role: "system", content: QUERY_REWRITE_SYSTEM_PROMPT },
         { role: "user", content: normalizedQuery },
