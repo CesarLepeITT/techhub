@@ -67,7 +67,7 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
-  const [cameraOpen, setCameraOpen] = useState(false) // Control de la cámara
+  const [isisCameraOpen, setIsisCameraOpen] = useState(false) // Control de la cámara
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -90,7 +90,7 @@ export default function AssistantPage() {
   const closeCamera = () => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
     cameraStreamRef.current = null
-    setIsCameraOpen(false)
+    setIsisCameraOpen(false)
   }
 
   const openCamera = async () => {
@@ -108,7 +108,7 @@ export default function AssistantPage() {
         audio: false,
       })
       cameraStreamRef.current = stream
-      setIsCameraOpen(true)
+      setIsisCameraOpen(true)
     } catch {
       setCameraError("No pude abrir la cámara. Revisa los permisos del navegador o usa el botón de subir fotografía.")
     }
@@ -234,7 +234,7 @@ export default function AssistantPage() {
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ""
-    if (file && isCameraOpen) closeCamera()
+    if (file && isisCameraOpen) closeCamera()
     void handleImageFile(file)
   }
 
@@ -257,8 +257,8 @@ export default function AssistantPage() {
               </div>
 
               <div className="mb-8 w-full max-w-2xl">
-                {cameraOpen ? (
-                  <CameraCapture onClose={() => setCameraOpen(false)} />
+                {isCameraOpen ? (
+                  <CameraCapture onClose={() => setisCameraOpen(false)} />
                 ) : (
                   <div className="relative rounded-xl border border-border bg-card p-1.5 shadow-elevated">
                     <div className="flex items-center gap-3 bg-card px-4 py-3">
@@ -266,7 +266,7 @@ export default function AssistantPage() {
                         value={inputValue}
                         onValueChange={setInputValue}
                         onSubmit={() => handleSubmit(inputValue)}
-                        onCameraClick={() => setCameraOpen(true)}
+                        onCameraClick={() => setisCameraOpen(true)}
                         placeholder="Describe lo que quieres construir..."
                         leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
                         wrapperClassName="flex-1 min-w-0"
@@ -324,9 +324,9 @@ export default function AssistantPage() {
 
               {/* Input Fijo Abajo */}
               <div className="sticky bottom-0 bg-gradient-to-t from-background via-background to-transparent pb-6 pt-4">
-                {cameraOpen ? (
+                {isCameraOpen ? (
                   <div className="rounded-xl border border-border bg-card overflow-hidden shadow-elevated">
-                    <CameraCapture onClose={() => setCameraOpen(false)} />
+                    <CameraCapture onClose={() => setisCameraOpen(false)} />
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 bg-card/80 backdrop-blur-md p-2 rounded-2xl border border-border/50 shadow-lg">
@@ -334,7 +334,7 @@ export default function AssistantPage() {
                       value={inputValue}
                       onValueChange={setInputValue}
                       onSubmit={() => handleSubmit(inputValue)}
-                      onCameraClick={() => setCameraOpen(true)}
+                      onCameraClick={() => setisCameraOpen(true)}
                       placeholder="Escribe un mensaje..."
                       leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
                       wrapperClassName="flex-1"
