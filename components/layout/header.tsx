@@ -147,7 +147,7 @@ export function Header() {
         <div className="navbar-solid shadow-soft">
           <div className="mx-auto max-w-7xl px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
-              <Link href="/" className="flex items-center gap-2 cursor-pointer">
+              <Link href={user?.role === "seller" ? "/vendedor" : "/"} className="flex items-center gap-2 cursor-pointer">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
                   <Sparkles className="h-5 w-5 text-primary-foreground" />
                 </div>
@@ -209,10 +209,10 @@ export function Header() {
 
                 {user ? (
                   <>
-                    <Link href="/perfil">
+                    <Link href={user.role === "seller" ? "/vendedor" : "/perfil"}>
                       <Button variant="outline" className="ml-2 rounded-lg cursor-pointer">
                         <User className="mr-2 h-4 w-4" />
-                        Mi perfil
+                        {user.role === "seller" ? "Mi tienda" : "Mi perfil"}
                       </Button>
                     </Link>
                     <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer" onClick={() => void logout()}>
@@ -236,7 +236,7 @@ export function Header() {
       <header className="fixed left-0 right-0 top-0 z-50 md:hidden">
         <div className="navbar-solid shadow-soft">
           <div className="flex h-14 items-center justify-between px-4">
-            <Link href="/" className="flex items-center gap-2 cursor-pointer">
+            <Link href={user?.role === "seller" ? "/vendedor" : "/"} className="flex items-center gap-2 cursor-pointer">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                 <Sparkles className="h-4 w-4 text-primary-foreground" />
               </div>
@@ -317,10 +317,10 @@ export function Header() {
             <div className="mt-2 space-y-2">
               {user ? (
                 <>
-                  <Link href="/perfil" onClick={() => setMobileMenuOpen(false)}>
+                  <Link href={user.role === "seller" ? "/vendedor" : "/perfil"} onClick={() => setMobileMenuOpen(false)}>
                     <Button variant="outline" className="w-full rounded-lg cursor-pointer">
                       <User className="mr-2 h-4 w-4" />
-                      Mi perfil
+                      {user.role === "seller" ? "Mi tienda" : "Mi perfil"}
                     </Button>
                   </Link>
                   <Button

@@ -80,6 +80,13 @@ export default function PerfilPage() {
   const [editData, setEditData] = useState(userData)
 
   useEffect(() => {
+    if (!authLoading && user?.role === "seller") {
+      router.replace("/vendedor")
+      return
+    }
+  }, [user, authLoading, router])
+
+  useEffect(() => {
     if (!authLoading && user) {
       setUserData({
         nombre: user.nombre || "",

@@ -12,6 +12,7 @@ type RawProductRow = {
   full_description?: string | null
   image_url?: string | null
   main_image_url?: string | null
+  video_url?: string | null
   images_json?: unknown
   retail_price: number | string
   wholesale_price?: number | string | null
@@ -58,6 +59,7 @@ function normalizeProduct(row: RawProductRow) {
     name: row.name,
     description: row.full_description || row.short_description || "",
     image_url: imageUrl,
+    video_url: row.video_url ?? null,
     images_array: images.length > 0 ? images : [imageUrl],
     price: toNumber(row.retail_price),
     wholesale_price:
@@ -131,6 +133,7 @@ export async function getProducts(limit = 20, offset = 0) {
       full_description,
       image_url,
       main_image_url,
+      video_url,
       images_json,
       retail_price,
       wholesale_price,
@@ -167,6 +170,7 @@ export async function getProductById(id: string) {
       full_description,
       image_url,
       main_image_url,
+      video_url,
       images_json,
       retail_price,
       wholesale_price,
@@ -942,6 +946,154 @@ export async function registerUser(userData: {
   return { data, error: null }
 }
 
+export async function getSellerByUserId(userId: string) {
+  const { data, error } = await supabase
+    .from("sellers")
+    .select("id, store_name, description, location, is_verified, rating, user_id")
+    .eq("user_id", userId)
+    .single()
+
+  return { data, error }
+}
+
+export async function updateSellerProfile(
+  sellerId: string,
+  updates: { store_name?: string; description?: string; location?: string }
+) {
+  const { data, error } = await supabase
+    .from("sellers")
+    .update(updates)
+    .eq("id", sellerId)
+    .select()
+    .single()
+
+  return { data, error }
+}
+
+export async function getAllSellerProducts(sellerId: string) {
+  const { data, error } = await supabase
+    .from("products")
+    .select(
+      `
+      id,
+      seller_id,
+      category_id,
+      name,
+      short_description,
+      full_description,
+      image_url,
+      main_image_url,
+      video_url,
+      images_json,
+      retail_price,
+      wholesale_price,
+      wholesale_min_quantity,
+      stock,
+      avg_rating,
+      review_count,
+      is_active,
+      created_at,
+      categories(id, name, slug)
+      `
+    )
+    .eq("seller_id", sellerId)
+    .order("created_at", { ascending: false })
+
+  return {
+    data:
+      data?.map((row) => ({
+        ...normalizeProduct(row as RawProductRow),
+        is_active: (row as { is_active: boolean }).is_active,
+        created_at: (row as { created_at: string }).created_at,
+      })) ?? [],
+    error,
+  }
+}
+
+export async function toggleProductActive(productId: string, isActive: boolean) {
+  const { data, error } = await supabase
+    .from("products")
+    .update({ is_active: isActive })
+    .eq("id", productId)
+    .select()
+    .single()
+
+  return { data, error }
+}
+
+export async function getSellerOrderItems(sellerId: string) {
+  const { data: sellerProducts, error: prodError } = await supabase
+    .from("products")
+    .select("id")
+    .eq("seller_id", sellerId)
+
+  if (prodError || !sellerProducts?.length) return { data: [], error: prodError }
+
+  const productIds = sellerProducts.map((p) => p.id)
+
+  const { data, error } = await supabase
+    .from("order_items")
+    .select(
+      `
+      id,
+      product_id,
+      quantity,
+      unit_price,
+      subtotal,
+      product_name,
+      orders(id, order_number, status, total, created_at, customer_name, customer_email)
+      `
+    )
+    .in("product_id", productIds)
+    .order("created_at", { foreignTable: "orders", ascending: false })
+    .limit(100)
+
+  type RawOrderItem = {
+    id: string
+    product_id: string
+    quantity: number
+    unit_price: number | string
+    subtotal: number | string
+    product_name: string
+    orders: {
+      id: string
+      order_number: string
+      status: string
+      total: number | string
+      created_at: string
+      customer_name: string
+      customer_email: string
+    } | null
+  }
+
+  return {
+    data:
+      data?.map((item) => {
+        const raw = item as unknown as RawOrderItem
+        return {
+          id: raw.id,
+          product_id: raw.product_id,
+          quantity: raw.quantity,
+          unit_price: toNumber(raw.unit_price),
+          subtotal: toNumber(raw.subtotal),
+          product_name: raw.product_name,
+          order: raw.orders
+            ? {
+                id: raw.orders.id,
+                order_number: raw.orders.order_number,
+                status: raw.orders.status,
+                total: toNumber(raw.orders.total),
+                created_at: raw.orders.created_at,
+                customer_name: raw.orders.customer_name,
+                customer_email: raw.orders.customer_email,
+              }
+            : null,
+        }
+      }) ?? [],
+    error,
+  }
+}
+
 export async function loginUser(email: string, password: string) {
   const { data, error } = await supabase
     .from("users")
@@ -951,4 +1103,34 @@ export async function loginUser(email: string, password: string) {
     .single()
 
   return { data, error }
+}
+
+export async function getProductsForReels(ids: string[]) {
+  const { data, error } = await supabase
+    .from("products")
+    .select(
+      `
+      id,
+      name,
+      short_description,
+      image_url,
+      main_image_url,
+      video_url,
+      retail_price,
+      wholesale_price,
+      wholesale_min_quantity,
+      stock,
+      avg_rating,
+      review_count,
+      sellers(id, store_name, is_verified),
+      categories(name)
+      `
+    )
+    .in("id", ids)
+    .eq("is_active", true)
+
+  return {
+    data: data?.map((row) => normalizeProduct(row as RawProductRow)) ?? [],
+    error,
+  }
 }
