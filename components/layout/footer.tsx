@@ -6,15 +6,15 @@ const footerLinks = {
   productos: [
     { name: "Microcontroladores", href: "/productos?categoria=Microcontroladores" },
     { name: "Sensores", href: "/productos?categoria=Sensores" },
-    { name: "MÃ³dulos IoT", href: "/productos?categoria=IoT" },
+    { name: "Módulos IoT", href: "/productos?categoria=IoT" },
     { name: "Herramientas", href: "/productos?categoria=Herramientas" },
     { name: "Kits educativos", href: "/productos?categoria=Kits" },
   ],
   servicios: [
     { name: "Asistente IA", href: "/asistente" },
     { name: "TechReels", href: "/reels" },
-    { name: "EnvÃ­os express", href: "/envios" },
-    { name: "Soporte tÃ©cnico", href: "/soporte" },
+    { name: "Envíos express", href: "/envios" },
+    { name: "Soporte técnico", href: "/soporte" },
   ],
   empresa: [
     { name: "Sobre nosotros", href: "/nosotros" },
@@ -23,8 +23,8 @@ const footerLinks = {
     { name: "Trabaja con nosotros", href: "/empleo" },
   ],
   legal: [
-    { name: "TÃ©rminos de servicio", href: "/terminos" },
-    { name: "PolÃ­tica de privacidad", href: "/privacidad" },
+    { name: "Términos de servicio", href: "/terminos" },
+    { name: "Política de privacidad", href: "/privacidad" },
     { name: "Devoluciones", href: "/devoluciones" },
   ],
 }
@@ -45,10 +45,10 @@ export function Footer() {
           <div className="flex flex-col items-center gap-6 rounded-xl bg-secondary p-8 text-center lg:flex-row lg:justify-between lg:text-left">
             <div className="max-w-md">
               <h3 className="mb-2 text-xl font-bold text-foreground">
-                Ãšnete a la comunidad maker
+                Únete a la comunidad maker
               </h3>
               <p className="text-muted-foreground">
-                Recibe ofertas exclusivas, tutoriales y novedades en componentes electrÃ³nicos.
+                Recibe ofertas exclusivas, tutoriales y novedades en componentes electrónicos.
               </p>
             </div>
             <div className="flex w-full max-w-md flex-col gap-3 sm:flex-row">
@@ -77,12 +77,12 @@ export function Footer() {
               <span className="text-xl font-bold text-foreground">techHub</span>
             </Link>
             <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
-              El marketplace de tecnologÃ­a y electrÃ³nica para la comunidad maker de Tijuana y todo MÃ©xico.
+              El marketplace de tecnología y electrónica para la comunidad maker de Tijuana y todo México.
             </p>
             <div className="space-y-3 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-primary" />
-                <span>Zona RÃ­o, Tijuana, B.C.</span>
+                <span>Zona Río, Tijuana, B.C.</span>
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="h-4 w-4 text-primary" />
@@ -164,7 +164,7 @@ export function Footer() {
         {/* Bottom Bar */}
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 sm:flex-row">
           <p className="text-sm text-muted-foreground">
-            Â© 2026 techHub. Todos los derechos reservados.
+            © 2026 techHub. Todos los derechos reservados.
           </p>
           <div className="flex items-center gap-2">
             {socialLinks.map((social) => (

@@ -7,7 +7,9 @@
       "Bash(npm install *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "PowerShell(Get-Content *)"
+      "PowerShell(Get-Content *)",
+      "Bash(npm run *)",
+      "Bash(git commit *)"
     ]
   }
 }

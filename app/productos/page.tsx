@@ -56,6 +56,7 @@ export default function ProductosPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [sortBy, setSortBy] = useState("relevance")
   const [showFilters, setShowFilters] = useState(false)
+  const [showSortDropdown, setShowSortDropdown] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -178,7 +179,7 @@ export default function ProductosPage() {
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground">CatÃ¡logo de Productos</h1>
+            <h1 className="text-3xl font-bold text-foreground">Catálogo de Productos</h1>
             <p className="mt-2 text-muted-foreground">Explora nuestros productos disponibles</p>
           </div>
 
@@ -221,7 +222,7 @@ export default function ProductosPage() {
 
                 {/* Categories */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-foreground">CategorÃ­as</h4>
+                  <h4 className="text-sm font-medium text-foreground">Categorías</h4>
                   <div className="space-y-2">
                     <button
                       onClick={() => setSelectedCategory("all")}
@@ -252,17 +253,90 @@ export default function ProductosPage() {
                 {/* Sort */}
                 <div className="mt-6 border-t border-border pt-4">
                   <h4 className="mb-3 text-sm font-medium text-foreground">Ordenar por</h4>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background py-2 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
-                  >
-                    <option value="relevance">Relevancia</option>
-                    <option value="price-asc">Precio: Menor a Mayor</option>
-                    <option value="price-desc">Precio: Mayor a Menor</option>
-                    <option value="rating">Mejor CalificaciÃ³n</option>
-                    <option value="newest">MÃ¡s Recientes</option>
-                  </select>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowSortDropdown(!showSortDropdown)}
+                      className="w-full rounded-lg border border-border bg-background py-2.5 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer flex items-center justify-between hover:bg-secondary transition-colors"
+                    >
+                      <span>
+                        {sortBy === "relevance" && "Relevancia"}
+                        {sortBy === "price-asc" && "Precio: Menor a Mayor"}
+                        {sortBy === "price-desc" && "Precio: Mayor a Menor"}
+                        {sortBy === "rating" && "Mejor Calificación"}
+                        {sortBy === "newest" && "Más Recientes"}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 transition-transform ${showSortDropdown ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showSortDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-elevated z-10">
+                        <button
+                          onClick={() => {
+                            setSortBy("relevance")
+                            setShowSortDropdown(false)
+                          }}
+                          className={`block w-full text-left px-4 py-2.5 text-sm transition-colors cursor-pointer first:rounded-t-lg ${
+                            sortBy === "relevance"
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-foreground hover:bg-secondary"
+                          }`}
+                        >
+                          Relevancia
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSortBy("price-asc")
+                            setShowSortDropdown(false)
+                          }}
+                          className={`block w-full text-left px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+                            sortBy === "price-asc"
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-foreground hover:bg-secondary"
+                          }`}
+                        >
+                          Precio: Menor a Mayor
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSortBy("price-desc")
+                            setShowSortDropdown(false)
+                          }}
+                          className={`block w-full text-left px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+                            sortBy === "price-desc"
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-foreground hover:bg-secondary"
+                          }`}
+                        >
+                          Precio: Mayor a Menor
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSortBy("rating")
+                            setShowSortDropdown(false)
+                          }}
+                          className={`block w-full text-left px-4 py-2.5 text-sm transition-colors cursor-pointer ${
+                            sortBy === "rating"
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-foreground hover:bg-secondary"
+                          }`}
+                        >
+                          Mejor Calificación
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSortBy("newest")
+                            setShowSortDropdown(false)
+                          }}
+                          className={`block w-full text-left px-4 py-2.5 text-sm transition-colors cursor-pointer last:rounded-b-lg ${
+                            sortBy === "newest"
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-foreground hover:bg-secondary"
+                          }`}
+                        >
+                          Más Recientes
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -322,7 +396,7 @@ export default function ProductosPage() {
                       className="group rounded-xl border border-border bg-card overflow-hidden shadow-soft transition-all hover:shadow-elevated hover:border-primary/50"
                     >
                       <div className="relative h-48 overflow-hidden bg-secondary">
-                        <img
+                        <img loading="lazy"
                           src={product.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=400&fit=crop"}
                           alt={product.name}
                           className="h-full w-full object-cover transition-transform group-hover:scale-110"
@@ -374,7 +448,7 @@ export default function ProductosPage() {
                       className="group flex gap-4 rounded-xl border border-border bg-card p-4 shadow-soft transition-all hover:shadow-elevated hover:border-primary/50"
                     >
                       <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-secondary">
-                        <img
+                        <img loading="lazy"
                           src={product.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=400&fit=crop"}
                           alt={product.name}
                           className="h-full w-full object-cover group-hover:scale-110 transition-transform"

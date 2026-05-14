@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
@@ -458,7 +458,7 @@ export default function PerfilPage() {
                 <div key={order.id} className="rounded-xl border border-border bg-card p-6 shadow-soft hover:shadow-elevated transition-shadow">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex gap-4">
-                      <img
+                      <img loading="lazy"
                         src={order.order_items[0]?.products?.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=80&h=80&fit=crop"}
                         alt="Product"
                         className="h-20 w-20 rounded-lg object-cover bg-secondary"
@@ -506,7 +506,7 @@ export default function PerfilPage() {
                   {cartItems.map((item) => (
                     <div key={item.id} className="rounded-xl border border-border bg-card p-4 shadow-soft">
                       <div className="flex gap-4">
-                        <img
+                        <img loading="lazy"
                           src={item.products?.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=80&h=80&fit=crop"}
                           alt={item.products?.name}
                           className="h-20 w-20 rounded-lg object-cover bg-secondary"
@@ -580,7 +580,7 @@ export default function PerfilPage() {
                 {wishlistItems.map((item) => (
                   <div key={item.id} className="rounded-xl border border-border bg-card overflow-hidden shadow-soft hover:shadow-elevated transition-all">
                     <div className="relative h-32 overflow-hidden bg-secondary">
-                      <img
+                      <img loading="lazy"
                         src={item.products?.image_url || "https://images.unsplash.com/photo-1518770660439-4636190af475?w=200&h=200&fit=crop"}
                         alt={item.products?.name}
                         className="h-full w-full object-cover group-hover:scale-110 transition-transform"

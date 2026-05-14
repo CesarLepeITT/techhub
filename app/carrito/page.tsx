@@ -154,7 +154,7 @@ export default function CarritoPage() {
                   return (
                     <div key={item.id} className="rounded-xl border border-border bg-card p-4 shadow-soft">
                       <div className="flex gap-4">
-                        <img src={item.products.image_url} alt={item.products.name} className="h-24 w-24 rounded-lg object-cover bg-secondary" />
+                        <img loading="lazy" src={item.products.image_url} alt={item.products.name} className="h-24 w-24 rounded-lg object-cover bg-secondary" />
                         <div className="flex-1">
                           <h3 className="font-semibold text-foreground">{item.products.name}</h3>
                           <p className="mt-1 text-sm text-muted-foreground">${price.toFixed(2)}</p>
