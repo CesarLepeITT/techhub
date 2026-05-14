@@ -14,8 +14,6 @@ const SYSTEM_PROMPT =
 
 
 const MAX_SEARCH_QUERY_LENGTH = 400
-const RETRIEVAL_LIMIT = 20
-const RECOMMENDATION_LIMIT = 10
 
 function sanitizeSearchQuery(input: string): string {
   return input
@@ -99,9 +97,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   const cleanQuery = sanitizeSearchQuery(query)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
   logStage("retrieve_start", {
-    rawQuery: query,
     rawQueryLength: query.length,
-    cleanQuery,
     cleanQueryLength: cleanQuery.length,
     cleanQueryPreview: previewText(cleanQuery),
   })
@@ -114,18 +110,13 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   try {
     const ftsRes = await supabaseRequest("rpc/search_products_web", {
       method: "POST",
-      body: JSON.stringify({ raw_query: cleanQuery, max_results: RETRIEVAL_LIMIT }),
+      body: JSON.stringify({ raw_query: cleanQuery, max_results: 5 }),
     })
-    logStage("retrieve_fts_response", { status: ftsRes.status, ok: ftsRes.ok })
 
     if (ftsRes.ok) {
       const rows = (await ftsRes.json()) as Product[]
       logStage("retrieve_ok_fts", { count: rows.length, queryLength: cleanQuery.length })
-      logStage("retrieve_fts_rows", {
-        rows: rows.map((p) => ({ id: p.id, name: p.name, retail_price: p.retail_price, stock: p.stock })),
-      })
       if (rows.length > 0) return rows
-      logStage("retrieve_fts_empty", { queryLength: cleanQuery.length })
     } else {
       const errorBody = await ftsRes.text()
       logStage("retrieve_fts_failed", { status: ftsRes.status, error: errorBody.slice(0, 200) })
@@ -135,12 +126,10 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   }
 
   const tokens = tokenizeForIlikeFallback(cleanQuery)
-  logStage("retrieve_fallback_tokens", { tokens, tokenCount: tokens.length })
   if (tokens.length === 0) return []
 
   const orFilters = tokens.map((token) => `name.ilike.%${token}%`).join(",")
-  const path = `products?select=${select}&or=(${encodeURIComponent(orFilters)})&limit=${RETRIEVAL_LIMIT}&is_active=eq.true`
-  logStage("retrieve_fallback_query", { orFilters, encodedPathPreview: previewText(path, 180) })
+  const path = `products?select=${select}&or=(${encodeURIComponent(orFilters)})&limit=5&is_active=eq.true`
 
   try {
     const res = await supabaseRequest(path)
@@ -153,10 +142,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
 
     const rows = (await res.json()) as Product[]
     logStage("retrieve_ok_fallback", { count: rows.length, tokens: tokens.length })
-    logStage("retrieve_fallback_rows", {
-      rows: rows.map((p) => ({ id: p.id, name: p.name, retail_price: p.retail_price, stock: p.stock })),
-    })
-    return rows.slice(0, RETRIEVAL_LIMIT)
+    return rows.slice(0, 5)
   } catch (error) {
     logStage("retrieve_fallback_exception", { message: error instanceof Error ? error.message : "unknown" })
     return []
@@ -185,7 +171,6 @@ export async function POST(req: Request) {
     const rawQuery = body.message?.trim() ?? ""
     logStage("request_body_parsed", {
       hasMessage: Boolean(body.message),
-      rawQuery,
       rawQueryLength: rawQuery.length,
       rawQueryPreview: previewText(rawQuery),
       hasUserId: Boolean(body.userId),
@@ -208,7 +193,6 @@ export async function POST(req: Request) {
 
     const context = buildContext(products)
     logStage("context_built", { contextLength: context.length, productCount: products.length })
-    logStage("context_content", { context })
     let explanation = ""
     let selectedProductIds: string[] = []
 
@@ -255,26 +239,22 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
         if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
         selectedProductIds = extractRecommendedIdsFromText(explanation, products)
 
-        explanation = sanitizeUserFacingAiText(explanation)
-        logStage("groq_success", {
-          explanationLength: explanation.length,
-          explanationPreview: previewText(explanation),
-          selectedProductIdsCount: selectedProductIds.length,
-        })
+        // Remove UUID patterns from the explanation
+        explanation = explanation.replace(/\s*\([a-f0-9\-]{36}\)\s*/gi, "")
+        logStage("groq_success", { explanationLength: explanation.length, explanationPreview: previewText(explanation) })
       }
     }
 
     const productsToReturn = selectedProductIds.length > 0
       ? products.filter((p) => selectedProductIds.includes(p.id))
       : products
-    const limitedProducts = productsToReturn.slice(0, RECOMMENDATION_LIMIT)
     logStage("selected_products", {
       selectedByAi: selectedProductIds.length > 0,
       selectedProductIds,
-      returnedCount: limitedProducts.length,
+      returnedCount: productsToReturn.length,
     })
 
-    const recommendedProducts = limitedProducts.map((p) => ({
+    const recommendedProducts = productsToReturn.map((p) => ({
       id: p.id,
       name: p.name,
       retail_price: p.retail_price,
@@ -306,11 +286,6 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
     }
 
     logStage("request_success", { intent: detectedIntent, productCount: recommendedProducts.length })
-    logStage("final_response_payload", {
-      intent: detectedIntent,
-      response: explanation,
-      products: recommendedProducts,
-    })
     return NextResponse.json({ intent: detectedIntent, response: explanation, products: recommendedProducts })
   } catch (error) {
     logStage("unhandled_exception", { message: error instanceof Error ? error.message : "unknown" })
