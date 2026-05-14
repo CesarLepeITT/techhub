@@ -12,6 +12,8 @@ type Product = {
 const SYSTEM_PROMPT =
   "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency. Keep responses concise."
 
+const QUERY_REWRITE_SYSTEM_PROMPT =
+  "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas."
 
 const MAX_SEARCH_QUERY_LENGTH = 400
 
@@ -89,15 +91,99 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
     "Content-Type": "application/json",
     ...init.headers,
   }
-  logStage("supabase_request_start", { path, method: init.method ?? "GET" })
+  logStage("supabase_request_start", {
+    path,
+    method: init.method ?? "GET",
+    body: typeof init.body === "string" ? init.body : undefined,
+  })
   return fetch(url, { ...init, headers })
 }
 
+type GroqChatMessage = {
+  role: "system" | "user" | "assistant"
+  content: string
+}
+
+async function requestGroqChat(params: {
+  stagePrefix: string
+  messages: GroqChatMessage[]
+  temperature: number
+}) {
+  logStage(`${params.stagePrefix}_request_start`, {
+    model: env.groqModel,
+    temperature: params.temperature,
+    messages: params.messages,
+  })
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.groqApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: env.groqModel,
+      temperature: params.temperature,
+      messages: params.messages,
+    }),
+  })
+
+  logStage(`${params.stagePrefix}_response`, { status: res.status, ok: res.ok })
+  return res
+}
+
+function cleanRewrittenQuery(input: string): string {
+  return sanitizeSearchQuery(input.replace(/^(["'`]+)|(["'`]+)$/g, ""))
+}
+
+async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
+  logStage("query_rewrite_start", {
+    normalizedQueryLength: normalizedQuery.length,
+    normalizedQuery,
+  })
+
+  try {
+    const res = await requestGroqChat({
+      stagePrefix: "query_rewrite_groq",
+      temperature: 0,
+      messages: [
+        { role: "system", content: QUERY_REWRITE_SYSTEM_PROMPT },
+        { role: "user", content: normalizedQuery },
+      ],
+    })
+
+    if (!res.ok) {
+      const responseText = await res.text()
+      logStage("query_rewrite_failed", { status: res.status, error: responseText.slice(0, 200) })
+      return normalizedQuery
+    }
+
+    const aiJson = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const rawOutput = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
+    const rewrittenQuery = cleanRewrittenQuery(rawOutput)
+    logStage("query_rewrite_raw_output", { aiOutput: rawOutput })
+
+    if (!rewrittenQuery) {
+      logStage("query_rewrite_empty_output", { fallbackQuery: normalizedQuery })
+      return normalizedQuery
+    }
+
+    logStage("query_rewrite_success", {
+      normalizedQuery,
+      rewrittenQuery,
+      changed: rewrittenQuery !== normalizedQuery,
+    })
+    return rewrittenQuery
+  } catch (error) {
+    logStage("query_rewrite_exception", { message: error instanceof Error ? error.message : "unknown" })
+    return normalizedQuery
+  }
+}
+
 async function retrieveProducts(query: string): Promise<Product[]> {
-  const cleanQuery = sanitizeSearchQuery(query)
+  const cleanQuery = query
   const select = "id,name,short_description,retail_price,stock,main_image_url"
   logStage("retrieve_start", {
-    rawQueryLength: query.length,
     cleanQueryLength: cleanQuery.length,
     cleanQueryPreview: previewText(cleanQuery),
   })
@@ -179,13 +265,23 @@ export async function POST(req: Request) {
     if (!rawQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
     const userId = body.userId ?? "anonymous"
-    const detectedIntent = detectIntent(rawQuery)
-    logStage("intent_detected", { userId, detectedIntent })
+    const normalizedQuery = sanitizeSearchQuery(rawQuery)
+    logStage("query_normalized", {
+      rawQueryLength: rawQuery.length,
+      normalizedQueryLength: normalizedQuery.length,
+      normalizedQuery,
+    })
+
+    if (!normalizedQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
+
+    const searchQuery = await rewriteSearchQuery(normalizedQuery)
+    const detectedIntent = detectIntent(searchQuery)
+    logStage("intent_detected", { userId, detectedIntent, queryUsedForIntent: searchQuery })
 
     let products: Product[] = []
     try {
-      products = await retrieveProducts(rawQuery)
-      logStage("retrieve_done", { productCount: products.length })
+      products = await retrieveProducts(searchQuery)
+      logStage("retrieve_done", { productCount: products.length, searchQuery })
     } catch (error) {
       logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })
@@ -201,47 +297,38 @@ export async function POST(req: Request) {
         "No encontré productos exactos. ¿Cuál es tu presupuesto, tipo de proyecto o categoría preferida?"
       logStage("response_without_products", { explanationPreview: previewText(explanation) })
     } else {
-      logStage("groq_request_start", { productCount: products.length, contextLength: context.length })
-      const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.groqApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: env.groqModel,
-          temperature: 0.3,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: `User query: ${rawQuery}
+      const aiRes = await requestGroqChat({
+        stagePrefix: "recommendation_groq",
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `User query original: ${rawQuery}
+User query corregida para búsqueda: ${searchQuery}
 
 Product context:
 ${context}
 
 Devuelve una recomendación breve en español y usa explícitamente IDs de productos del contexto para los recomendados.
 Si recomiendas varios, incluye cada ID exacto en el texto.`,
-            },
-          ],
-        }),
+          },
+        ],
       })
-      logStage("groq_response", { status: aiRes.status, ok: aiRes.ok })
 
       if (!aiRes.ok) {
         const responseText = await aiRes.text()
-        logStage("groq_failed", { status: aiRes.status, error: responseText.slice(0, 200) })
+        logStage("recommendation_groq_failed", { status: aiRes.status, error: responseText.slice(0, 200) })
         explanation = `Encontré ${products.length} producto(s) relevante(s). ¿Quieres más detalles?`
       } else {
         const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
         explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
-        logStage("groq_raw_output", { aiOutput: explanation })
+        logStage("recommendation_groq_raw_output", { aiOutput: explanation })
         if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
         selectedProductIds = extractRecommendedIdsFromText(explanation, products)
 
-        // Remove UUID patterns from the explanation
-        explanation = explanation.replace(/\s*\([a-f0-9\-]{36}\)\s*/gi, "")
-        logStage("groq_success", { explanationLength: explanation.length, explanationPreview: previewText(explanation) })
+        explanation = sanitizeUserFacingAiText(explanation)
+        logStage("recommendation_groq_success", { explanationLength: explanation.length, explanationPreview: previewText(explanation) })
       }
     }
 
@@ -263,27 +350,15 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
     }))
     logStage("response_products_built", { recommendedCount: recommendedProducts.length })
 
-    try {
-      const logRes = await supabaseRequest("assistant_queries", {
-        method: "POST",
-        headers: { Prefer: "return=minimal" },
-        body: JSON.stringify([
-          {
-            user_id: userId,
-            query: rawQuery,
-            detected_intent: detectedIntent,
-            explanation,
-            recommended_products_json: {
-              product_ids: recommendedProducts.map((p) => p.id),
-              products: recommendedProducts,
-            },
-          },
-        ]),
-      })
-      logStage("assistant_query_logged", { status: logRes.status, ok: logRes.ok })
-    } catch (logError) {
-      logStage("logging_failed", { message: logError instanceof Error ? logError.message : "unknown" })
-    }
+    logStage("assistant_query_terminal_log", {
+      userId,
+      rawQuery,
+      normalizedQuery,
+      searchQuery,
+      detectedIntent,
+      explanation,
+      recommendedProducts,
+    })
 
     logStage("request_success", { intent: detectedIntent, productCount: recommendedProducts.length })
     return NextResponse.json({ intent: detectedIntent, response: explanation, products: recommendedProducts })
