@@ -229,7 +229,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   })
 
   const orFilters = [...phraseFilters, ...tokenFilters].join(",")
-  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=${MAX_RESULTS}`
+  const ilikePath = `products?select=${select}&or=(${orFilters})&limit=5`
   const ilikeRes = await supabaseRequest(ilikePath)
 
   if (!ilikeRes.ok) {
