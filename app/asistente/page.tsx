@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Sparkles, Send, ArrowRight, Package, Zap, GraduationCap, Puzzle, RefreshCw, ImageUp, Camera } from "lucide-react"
+import { Sparkles, Send, ArrowRight, Package, Zap, GraduationCap, Puzzle, RefreshCw, ImageUp, Camera, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { ProductRecommendationCard, type ChatProduct } from "@/components/asistente/product-recommendation-card"
+
+// --- Constantes y Utilidades ---
 
 const suggestedPrompts = [
   { icon: Puzzle, text: "Necesito armar un robot seguidor de línea para la escuela" },
@@ -42,6 +44,8 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
+// --- Sub-componentes ---
+
 function MessageBubble({ message }: { message: Message }) {
   if (message.type === "user") {
     return (
@@ -49,7 +53,7 @@ function MessageBubble({ message }: { message: Message }) {
         <div className="max-w-[80%] rounded-xl rounded-br-lg bg-primary px-5 py-3 text-primary-foreground">
           {message.imagePreview && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={message.imagePreview} alt="Imagen enviada al asistente" className="mb-3 max-h-64 rounded-lg object-contain" />
+            <img src={message.imagePreview} alt="Imagen enviada" className="mb-3 max-h-64 rounded-lg object-contain" />
           )}
           <p className="text-sm">{message.content}</p>
         </div>
@@ -59,14 +63,18 @@ function MessageBubble({ message }: { message: Message }) {
 
   return (
     <div className="flex gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10"><Sparkles className="h-5 w-5 text-primary" /></div>
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+        <Sparkles className="h-5 w-5 text-primary" />
+      </div>
       <div className="flex-1 space-y-3">
         <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft">
           <p className="text-sm leading-relaxed text-foreground">{message.content}</p>
         </div>
         {message.products && message.products.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-2">
-            {message.products.map((product) => <ProductRecommendationCard key={product.id} product={product} />)}
+            {message.products.map((product) => (
+              <ProductRecommendationCard key={product.id} product={product} />
+            ))}
           </div>
         )}
       </div>
@@ -97,16 +105,14 @@ function Composer({
         e.preventDefault()
         onSubmit()
       }}
-      className="flex items-center gap-2 rounded-lg bg-card/80 px-3 py-3 sm:gap-3 sm:px-4"
+      className="flex items-center gap-2 rounded-lg bg-card/80 px-3 py-3 sm:gap-3 sm:px-4 backdrop-blur-md border border-border/50 shadow-lg"
     >
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        className="h-10 w-10 shrink-0 rounded-xl"
+        className="h-10 w-10 shrink-0 rounded-xl hover:bg-secondary"
         disabled={isTyping}
-        title="Subir fotografía"
-        aria-label="Subir fotografía"
         onClick={onUploadClick}
       >
         <ImageUp className="h-4 w-4" />
@@ -115,10 +121,8 @@ function Composer({
         type="button"
         variant="ghost"
         size="icon"
-        className="h-10 w-10 shrink-0 rounded-xl"
+        className="h-10 w-10 shrink-0 rounded-xl hover:bg-secondary"
         disabled={isTyping}
-        title="Tomar fotografía"
-        aria-label="Tomar fotografía"
         onClick={onCameraClick}
       >
         <Camera className="h-4 w-4" />
@@ -130,64 +134,56 @@ function Composer({
         onChange={(e) => onInputChange(e.target.value)}
         className="min-w-0 flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none"
       />
-      <Button type="submit" size="icon" className="h-10 w-10 shrink-0 rounded-xl bg-primary hover:bg-primary/90" disabled={!inputValue.trim() || isTyping}>
+      <Button 
+        type="submit" 
+        size="icon" 
+        className="h-10 w-10 shrink-0 rounded-xl bg-primary hover:bg-primary/90" 
+        disabled={!inputValue.trim() || isTyping}
+      >
         <Send className="h-4 w-4" />
       </Button>
     </form>
   )
 }
 
+// --- Componente Principal ---
+
 export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
-  const [isCameraOpen, setIsCameraOpen] = useState(false)
-  const [cameraError, setCameraError] = useState("")
+  
+  // Referencias corregidas
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
 
+  // Scroll automático al final de los mensajes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isTyping])
 
-  useEffect(() => () => {
-    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+  // Limpieza de la cámara al desmontar el componente
+  useEffect(() => {
+    return () => {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach((track) => track.stop())
+      }
+    }
   }, [])
-
-  const closeCamera = () => {
-    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
-    cameraStreamRef.current = null
-    setIsCameraOpen(false)
-  }
-
-  const openCamera = async () => {
-    if (isTyping) return
-    setCameraError("")
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError("Tu navegador no permite abrir la cámara desde esta página. Usa el botón de subir fotografía.")
-      return
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      })
-      cameraStreamRef.current = stream
-      setIsCameraOpen(true)
-      setTimeout(() => {
-        if (videoRef.current) videoRef.current.srcObject = stream
-      }, 0)
-    } catch {
-      setCameraError("No pude abrir la cámara. Revisa los permisos del navegador o usa el botón de subir fotografía.")
-    }
-  }
 
   const handleSubmit = async (prompt: string) => {
     if (!prompt.trim() || isTyping) return
-    setMessages((prev) => [...prev, { id: Date.now().toString(), type: "user", content: prompt, timestamp: new Date() }])
+    
+    const userMessage: Message = { 
+      id: Date.now().toString(), 
+      type: "user", 
+      content: prompt, 
+      timestamp: new Date() 
+    }
+    
+    setMessages((prev) => [...prev, userMessage])
     setInputValue("")
     setIsTyping(true)
 
@@ -198,6 +194,7 @@ export default function AssistantPage() {
         body: JSON.stringify({ message: prompt }),
       })
       const data = await response.json()
+      
       if (!response.ok) throw new Error(data.error || "Error desconocido")
 
       setMessages((prev) => [...prev, {
@@ -207,11 +204,11 @@ export default function AssistantPage() {
         products: data.products,
         timestamp: new Date(),
       }])
-    } catch {
+    } catch (error) {
       setMessages((prev) => [...prev, {
         id: (Date.now() + 1).toString(),
         type: "assistant",
-        content: "No pude procesar tu solicitud ahora mismo. Cuéntame tu presupuesto, categoría y tipo de proyecto para ayudarte mejor.",
+        content: "No pude procesar tu solicitud ahora mismo. Intenta describiendo los componentes que buscas.",
         timestamp: new Date(),
       }])
     } finally {
@@ -221,26 +218,21 @@ export default function AssistantPage() {
 
   const handleImageFile = async (file: File | undefined) => {
     if (!file || isTyping) return
+    
     if (!file.type.startsWith("image/")) {
-      setMessages((prev) => [...prev, {
-        id: Date.now().toString(),
-        type: "assistant",
-        content: "El archivo seleccionado no parece ser una imagen. Intenta con una fotografía en PNG, JPG o WebP.",
-        timestamp: new Date(),
-      }])
+      alert("Por favor selecciona un archivo de imagen válido.")
       return
     }
 
-    setInputValue("")
     setIsTyping(true)
-
     try {
       const imageDataUrl = await readFileAsDataUrl(file)
-      const prompt = "Buscar productos relacionados con esta fotografía"
+      const prompt = "Analiza esta imagen y busca componentes relacionados"
+      
       setMessages((prev) => [...prev, {
         id: Date.now().toString(),
         type: "user",
-        content: prompt,
+        content: "Te he enviado una imagen para analizar.",
         imagePreview: imageDataUrl,
         timestamp: new Date(),
       }])
@@ -250,21 +242,22 @@ export default function AssistantPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: prompt, imageDataUrl }),
       })
+      
       const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Error desconocido")
+      if (!response.ok) throw new Error(data.error || "Error en el servidor")
 
       setMessages((prev) => [...prev, {
         id: (Date.now() + 1).toString(),
         type: "assistant",
-        content: stripIdsFromAssistantText(data.response ?? ""),
+        content: stripIdsFromAssistantText(data.response ?? "Aquí tienes lo que encontré:"),
         products: data.products,
         timestamp: new Date(),
       }])
-    } catch {
+    } catch (err) {
       setMessages((prev) => [...prev, {
         id: (Date.now() + 1).toString(),
         type: "assistant",
-        content: "No pude analizar la fotografía ahora mismo. Intenta con otra imagen o describe el componente que quieres encontrar.",
+        content: "No pude analizar la fotografía. Intenta subirla de nuevo o describe el producto.",
         timestamp: new Date(),
       }])
     } finally {
@@ -274,24 +267,45 @@ export default function AssistantPage() {
 
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    event.target.value = ""
+    event.target.value = "" // Reset para permitir subir la misma foto
     void handleImageFile(file)
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
+      
       <main className="flex flex-1 flex-col pb-8 pt-20 md:pt-24">
         <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 sm:px-6">
-          <input ref={uploadInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileInputChange} />
-          <input ref={cameraInputRef} type="file" accept="image/png,image/jpeg,image/webp" capture="environment" className="hidden" onChange={handleFileInputChange} />
+          
+          {/* Inputs de archivos ocultos */}
+          <input 
+            ref={uploadInputRef} 
+            type="file" 
+            accept="image/png,image/jpeg,image/webp" 
+            className="hidden" 
+            onChange={handleFileInputChange} 
+          />
+          <input 
+            ref={cameraInputRef} 
+            type="file" 
+            accept="image/png,image/jpeg,image/webp" 
+            capture="environment" 
+            className="hidden" 
+            onChange={handleFileInputChange} 
+          />
+
           {messages.length === 0 ? (
+            // --- Vista Inicial ---
             <div className="flex flex-1 flex-col items-center justify-center py-12">
               <div className="mb-8 text-center">
-                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 shadow-soft"><Sparkles className="h-8 w-8 text-primary" /></div>
+                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 shadow-soft">
+                  <Sparkles className="h-8 w-8 text-primary" />
+                </div>
                 <h1 className="mb-2 text-2xl font-bold text-foreground sm:text-3xl">Asistente de compras IA</h1>
-                <p className="text-sm text-muted-foreground">Describe tu proyecto o sube/toma una foto del componente que necesitas.</p>
+                <p className="text-sm text-muted-foreground">Encuentra componentes electrónicos mediante texto o fotos.</p>
               </div>
+
               <div className="mb-8 w-full max-w-2xl">
                 <Composer
                   inputValue={inputValue}
@@ -303,10 +317,51 @@ export default function AssistantPage() {
                   onCameraClick={() => cameraInputRef.current?.click()}
                 />
               </div>
-              <div className="w-full max-w-2xl"><p className="mb-4 text-center text-sm font-medium text-muted-foreground">Prueba con estos ejemplos</p><div className="grid gap-3 sm:grid-cols-2">{suggestedPrompts.map((prompt, index) => <button key={index} className="group flex items-center gap-3 rounded-lg bg-card p-4 text-left shadow-soft transition-lift" onClick={() => handleSubmit(prompt.text)}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground"><prompt.icon className="h-5 w-5" /></div><span className="text-sm text-foreground">{prompt.text}</span><ArrowRight className="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /></button>)}</div></div>
+
+              <div className="w-full max-w-2xl">
+                <p className="mb-4 text-center text-sm font-medium text-muted-foreground">Prueba con estos ejemplos</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {suggestedPrompts.map((prompt, index) => (
+                    <button 
+                      key={index} 
+                      className="group flex items-center gap-3 rounded-xl bg-card p-4 text-left shadow-soft transition-all hover:scale-[1.02] active:scale-95 border border-border/50" 
+                      onClick={() => handleSubmit(prompt.text)}
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                        <prompt.icon className="h-5 w-5" />
+                      </div>
+                      <span className="text-sm text-foreground">{prompt.text}</span>
+                      <ArrowRight className="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
-            <div className="flex flex-1 flex-col"><div className="flex-1 space-y-6 py-6">{messages.map((message) => <MessageBubble key={message.id} message={message} />)}{isTyping && <div className="flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10"><Sparkles className="h-5 w-5 text-primary animate-pulse-soft" /></div><div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft"><div className="flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin text-primary" /><span className="text-sm text-muted-foreground">Analizando y buscando productos...</span></div></div></div>}<div ref={messagesEndRef} /></div>
+            // --- Vista de Chat ---
+            <div className="flex flex-1 flex-col">
+              <div className="flex-1 space-y-6 py-6">
+                {messages.map((message) => (
+                  <MessageBubble key={message.id} message={message} />
+                ))}
+                
+                {isTyping && (
+                  <div className="flex gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                      <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                    </div>
+                    <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft border border-border/50">
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+                        <span className="text-sm text-muted-foreground">Analizando componentes...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input fijo al final */}
               <div className="sticky bottom-0 bg-gradient-to-t from-background via-background to-transparent pb-6 pt-4">
                 <Composer
                   inputValue={inputValue}
@@ -322,6 +377,7 @@ export default function AssistantPage() {
           )}
         </div>
       </main>
+      
       <Footer />
     </div>
   )
