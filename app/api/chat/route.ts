@@ -16,8 +16,7 @@ const QUERY_REWRITE_SYSTEM_PROMPT =
   "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas. La corrección de ortografía es la prioridad; asegúrate de corregir palabras mal escritas. Asegurate de poner tildes."
 
 const IMAGE_DESCRIPTION_SYSTEM_PROMPT =
-  "Eres un asistente visual para una tienda de tecnología y electrónica. Describe en español, de forma breve y útil para búsqueda, lo que se ve en la imagen. Enfócate en componentes, dispositivos, cables, módulos, herramientas, marcas visibles, colores, conectores, estado físico y posibles productos similares. No inventes detalles no visibles."
-
+"Eres un asistente visual para una tienda de tecnología y electrónica. Describe en español, de forma breve y útil para búsqueda, lo que se ve en la imagen. Enfócate solamente en componentes, dispositivos, cables, módulos, herramientas, marcas visibles, colores, conectores, estado físico y posibles productos similares. No inventes detalles no visibles. Quiero que la descripción solo incluya palabras clave para describir estos objetos."
 const MAX_SEARCH_QUERY_LENGTH = 400
 const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000
 
@@ -46,7 +45,7 @@ const env = {
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
-  groqVisionModel: process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct",
+  groqVisionModel: process.env.GROQ_VISION_MODEL ?? llama-3.2-90b-vision-preview", 
 }
 
 function detectIntent(query: string): string {
