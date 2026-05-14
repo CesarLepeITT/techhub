@@ -12,6 +12,28 @@ type Product = {
 const SYSTEM_PROMPT =
   "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency. Keep responses concise."
 
+
+const MAX_SEARCH_QUERY_LENGTH = 400
+
+function sanitizeSearchQuery(input: string): string {
+  return input
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/[;\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_SEARCH_QUERY_LENGTH)
+}
+
+function tokenizeForIlikeFallback(input: string): string[] {
+  return input
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 2)
+    .slice(0, 3)
+}
+
 const env = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
@@ -61,41 +83,51 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 }
 
 async function retrieveProducts(query: string): Promise<Product[]> {
-  const cleanQuery = query.trim()
+  const cleanQuery = sanitizeSearchQuery(query)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
 
-  const tokens = cleanQuery
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 2)
-    .slice(0, 2)
-
-  if (tokens.length === 0) {
+  if (!cleanQuery) {
     logStage("retrieve_no_tokens", { query: cleanQuery })
     return []
   }
 
-  const filters = tokens.map((token) => {
-    const encoded = encodeURIComponent(`%${token}%`)
-    return `name.ilike.${encoded}`
-  })
+  try {
+    const ftsRes = await supabaseRequest("rpc/search_products_web", {
+      method: "POST",
+      body: JSON.stringify({ raw_query: cleanQuery, max_results: 5 }),
+    })
 
-  const orFilters = filters.join(",")
-  const path = `products?select=${select}&or=(${orFilters})&limit=5&is_active=eq.true`
+    if (ftsRes.ok) {
+      const rows = (await ftsRes.json()) as Product[]
+      logStage("retrieve_ok_fts", { count: rows.length, queryLength: cleanQuery.length })
+      if (rows.length > 0) return rows
+    } else {
+      const errorBody = await ftsRes.text()
+      logStage("retrieve_fts_failed", { status: ftsRes.status, error: errorBody.slice(0, 200) })
+    }
+  } catch (error) {
+    logStage("retrieve_fts_exception", { message: error instanceof Error ? error.message : "unknown" })
+  }
+
+  const tokens = tokenizeForIlikeFallback(cleanQuery)
+  if (tokens.length === 0) return []
+
+  const orFilters = tokens.map((token) => `name.ilike.%${token}%`).join(",")
+  const path = `products?select=${select}&or=(${encodeURIComponent(orFilters)})&limit=5&is_active=eq.true`
 
   try {
     const res = await supabaseRequest(path)
     if (!res.ok) {
       const errorBody = await res.text()
-      logStage("retrieve_failed", { status: res.status, error: errorBody.slice(0, 200) })
+      logStage("retrieve_fallback_failed", { status: res.status, error: errorBody.slice(0, 200) })
       return []
     }
+
     const rows = (await res.json()) as Product[]
-    logStage("retrieve_ok", { count: rows.length, query: cleanQuery })
+    logStage("retrieve_ok_fallback", { count: rows.length, tokens: tokens.length })
     return rows.slice(0, 5)
   } catch (error) {
-    logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
+    logStage("retrieve_fallback_exception", { message: error instanceof Error ? error.message : "unknown" })
     return []
   }
 }
