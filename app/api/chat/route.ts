@@ -45,7 +45,7 @@ const env = {
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
-  groqVisionModel: process.env.GROQ_VISION_MODEL ?? llama-3.2-90b-vision-preview", 
+  groqVisionModel: process.env.GROQ_VISION_MODEL ?? "llama-3.2-90b-vision-preview", 
 }
 
 function detectIntent(query: string): string {
