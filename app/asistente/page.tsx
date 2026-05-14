@@ -31,8 +31,11 @@ function MessageBubble({ message }: { message: Message }) {
     <div className="flex gap-3">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10"><Sparkles className="h-5 w-5 text-primary" /></div>
       <div className="flex-1 space-y-3">
-        <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft"><p className="text-sm text-foreground leading-relaxed">{message.content}</p></div>
-        {message.products && message.products.length > 0 && <div className="grid gap-2 sm:grid-cols-2">{message.products.map((product) => <ProductRecommendationCard key={product.id} product={product} />)}</div>}
+        {message.products && message.products.length > 0 ? (
+          <div className="grid gap-2 sm:grid-cols-2">{message.products.map((product) => <ProductRecommendationCard key={product.id} product={product} />)}</div>
+        ) : (
+          <div className="max-w-[90%] rounded-xl rounded-tl-lg bg-card px-5 py-3 shadow-soft"><p className="text-sm text-foreground leading-relaxed">{message.content}</p></div>
+        )}
       </div>
     </div>
   )
