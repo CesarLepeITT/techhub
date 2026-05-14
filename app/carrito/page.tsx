@@ -24,13 +24,14 @@ type CartItem = {
   quantity: number
   products: {
     id: string
+    seller_id: string
     name: string
     image_url: string
     price: number
     wholesale_price: number | null
     minimum_wholesale_quantity: number | null
     stock: number
-  }
+  } | null
 }
 
 export default function CarritoPage() {
@@ -99,6 +100,7 @@ export default function CarritoPage() {
   }
 
   const subtotal = cartItems.reduce((sum, item) => {
+    if (!item.products) return sum
     const isWholesale = item.quantity >= (item.products.minimum_wholesale_quantity || 10)
     const price = isWholesale && item.products.wholesale_price
       ? item.products.wholesale_price
@@ -138,6 +140,8 @@ export default function CarritoPage() {
             <div className="mt-8 grid gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2 space-y-4">
                 {cartItems.map((item) => {
+                  if (!item.products) return null
+
                   const isWholesale = item.quantity >= (item.products.minimum_wholesale_quantity || 10)
                   const price = isWholesale && item.products.wholesale_price
                     ? item.products.wholesale_price

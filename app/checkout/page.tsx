@@ -28,12 +28,13 @@ type CartItem = {
   quantity: number
   products: {
     id: string
+    seller_id: string
     name: string
     image_url: string
     price: number
     wholesale_price: number | null
     minimum_wholesale_quantity: number | null
-  }
+  } | null
 }
 
 type Step = "shipping" | "payment" | "confirmation"
@@ -98,6 +99,7 @@ export default function CheckoutPage() {
   }
 
   const subtotal = cartItems.reduce((sum, item) => {
+    if (!item.products) return sum
     const isWholesale = item.quantity >= (item.products.minimum_wholesale_quantity || 10)
     const price = isWholesale && item.products.wholesale_price
       ? item.products.wholesale_price
@@ -117,7 +119,6 @@ export default function CheckoutPage() {
     setError("")
 
     try {
-      const orderNumber = `ORD-${Date.now()}`
       const estimatedDelivery = new Date()
       if (formData.shippingMethod === "express") {
         estimatedDelivery.setDate(estimatedDelivery.getDate() + 2)
@@ -128,13 +129,19 @@ export default function CheckoutPage() {
       }
 
       const orderRes = await createOrder(user.id, {
-        order_number: orderNumber,
+        customer_name: formData.nombre,
         subtotal,
         shipping_cost: shipping,
         tax,
         total,
-        shipping_method: formData.shippingMethod,
-        payment_method: formData.paymentMethod,
+        shipping_method:
+          formData.shippingMethod === "local" ? "pickup" : (formData.shippingMethod as "standard" | "express"),
+        payment_method:
+          formData.paymentMethod === "cash"
+            ? "cash_on_delivery"
+            : formData.paymentMethod === "credit"
+              ? "card"
+              : "transfer",
         shipping_address: formData.direccion,
         shipping_city: formData.ciudad,
         shipping_state: formData.estado,
@@ -147,15 +154,21 @@ export default function CheckoutPage() {
       if (orderRes.error) throw orderRes.error
       if (!orderRes.data) throw new Error("No se creó la orden")
 
-      const itemsToAdd = cartItems.map((item) => {
+      const itemsToAdd = cartItems.flatMap((item) => {
+        if (!item.products) return []
+
         const isWholesale = item.quantity >= (item.products.minimum_wholesale_quantity || 10)
         const price = isWholesale && item.products.wholesale_price
           ? item.products.wholesale_price
           : item.products.price
         return {
           product_id: item.product_id,
+          seller_id: item.products.seller_id,
+          product_name: item.products.name,
           quantity: item.quantity,
-          price,
+          unit_price: price,
+          price_type: isWholesale ? "wholesale" : "retail",
+          subtotal: price * item.quantity,
         }
       })
 
@@ -400,10 +413,19 @@ export default function CheckoutPage() {
                 <h3 className="mb-4 text-lg font-semibold text-foreground">Resumen de orden</h3>
                 <div className="mb-4 space-y-3 border-b border-border pb-4">
                   {cartItems.map((item) => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{item.products.name} x{item.quantity}</span>
-                      <span className="font-medium text-foreground">${(item.quantity * item.products.price).toFixed(2)}</span>
-                    </div>
+                    item.products ? (
+                      <div key={item.id} className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{item.products.name} x{item.quantity}</span>
+                        <span className="font-medium text-foreground">
+                          ${(
+                            item.quantity *
+                            ((item.quantity >= (item.products.minimum_wholesale_quantity || 10) &&
+                              item.products.wholesale_price) ||
+                              item.products.price)
+                          ).toFixed(2)}
+                        </span>
+                      </div>
+                    ) : null
                   ))}
                 </div>
 

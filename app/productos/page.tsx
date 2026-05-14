@@ -18,11 +18,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
-import { getProducts, getCategories, searchProducts } from "@/lib/supabase-queries"
-import { useSession } from "@/components/SessionProvider"
+import { getProducts, getCategories } from "@/lib/supabase-queries"
 
 type Product = {
   id: string
+  category_id?: string
   name: string
   image_url: string
   price: number
@@ -41,7 +41,7 @@ type Category = {
 }
 
 export default function ProductosPage() {
-  const { user } = useSession()
+  const [allProducts, setAllProducts] = useState<Product[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -57,8 +57,38 @@ export default function ProductosPage() {
   }, [])
 
   useEffect(() => {
-    filterAndSortProducts()
-  }, [selectedCategory, sortBy, searchQuery])
+    let filteredProducts = [...allProducts]
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.trim().toLowerCase()
+      filteredProducts = filteredProducts.filter((product) =>
+        product.name.toLowerCase().includes(query)
+      )
+    }
+
+    if (selectedCategory !== "all") {
+      filteredProducts = filteredProducts.filter(
+        (product) => product.category_id === selectedCategory
+      )
+    }
+
+    switch (sortBy) {
+      case "price-asc":
+        filteredProducts.sort((a, b) => a.price - b.price)
+        break
+      case "price-desc":
+        filteredProducts.sort((a, b) => b.price - a.price)
+        break
+      case "rating":
+        filteredProducts.sort((a, b) => b.rating - a.rating)
+        break
+      case "newest":
+      default:
+        break
+    }
+
+    setProducts(filteredProducts)
+  }, [allProducts, searchQuery, selectedCategory, sortBy])
 
   const loadData = async () => {
     setIsLoading(true)
@@ -72,53 +102,12 @@ export default function ProductosPage() {
       if (productsRes.error) throw productsRes.error
       if (categoriesRes.error) throw categoriesRes.error
 
+      setAllProducts(productsRes.data || [])
       setProducts(productsRes.data || [])
       setCategories(categoriesRes.data || [])
     } catch (err) {
       setError("Error al cargar productos")
       console.error(err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const filterAndSortProducts = async () => {
-    setIsLoading(true)
-    try {
-      let filteredProducts = [...products]
-
-      if (searchQuery) {
-        const searchRes = await searchProducts(searchQuery)
-        filteredProducts = searchRes.data || []
-      } else if (selectedCategory !== "all") {
-        // Filter by category if selected
-        const categoryObj = categories.find(c => c.id === selectedCategory)
-        if (categoryObj) {
-          // In real implementation, fetch from DB with category filter
-        }
-      }
-
-      // Sort products
-      switch (sortBy) {
-        case "price-asc":
-          filteredProducts.sort((a, b) => a.price - b.price)
-          break
-        case "price-desc":
-          filteredProducts.sort((a, b) => b.price - a.price)
-          break
-        case "rating":
-          filteredProducts.sort((a, b) => b.rating - a.rating)
-          break
-        case "newest":
-          // Already sorted by newest from DB
-          break
-        default:
-          break
-      }
-
-      setProducts(filteredProducts)
-    } catch (err) {
-      console.error("Error filtering products:", err)
     } finally {
       setIsLoading(false)
     }

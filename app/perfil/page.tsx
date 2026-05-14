@@ -65,13 +65,13 @@ export default function PerfilPage() {
       setUserData({
         nombre: user.nombre || "",
         email: user.email || "",
-        telefono: "",
+        telefono: user.telefono || "",
         ubicacion: "",
       })
       setEditData({
         nombre: user.nombre || "",
         email: user.email || "",
-        telefono: "",
+        telefono: user.telefono || "",
         ubicacion: "",
       })
       loadOrders()
@@ -105,21 +105,25 @@ export default function PerfilPage() {
   const getStatusLabel = (status: Order["status"]) => {
     const labels = {
       pending: "Pendiente",
+      confirmed: "Confirmada",
       processing: "Procesando",
       shipped: "Enviado",
       delivered: "Entregado",
+      cancelled: "Cancelada",
     }
-    return labels[status]
+    return labels[status as keyof typeof labels] || status
   }
 
   const getStatusColor = (status: Order["status"]) => {
     const colors = {
       pending: "bg-yellow-100 text-yellow-800",
+      confirmed: "bg-cyan-100 text-cyan-800",
       processing: "bg-blue-100 text-blue-800",
       shipped: "bg-purple-100 text-purple-800",
       delivered: "bg-green-100 text-green-800",
+      cancelled: "bg-red-100 text-red-800",
     }
-    return colors[status]
+    return colors[status as keyof typeof colors] || "bg-secondary text-secondary-foreground"
   }
 
   const getStatusIcon = (status: Order["status"]) => {

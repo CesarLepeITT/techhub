@@ -24,6 +24,12 @@ import { supabase } from "@/lib/supabase"
 
 type UserType = "usuario" | "vendedor" | null
 
+function createUsernameSeed(email: string, name: string) {
+  const source = (name || email.split("@")[0] || "usuario").toLowerCase()
+  const base = source.replace(/[^a-z0-9]+/g, "").slice(0, 18) || "usuario"
+  return `${base}${Math.floor(Math.random() * 10000)}`
+}
+
 export default function RegistroPage() {
   const router = useRouter()
   const [userType, setUserType] = useState<UserType>(null)
@@ -101,7 +107,6 @@ export default function RegistroPage() {
 
     setIsLoading(true)
     try {
-      // Register user with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -119,18 +124,21 @@ export default function RegistroPage() {
         return
       }
 
-      // Create user profile in database
-      const { error: profileError } = await supabase
+      const role = userType === "vendedor" ? "seller" : "buyer"
+      const username = createUsernameSeed(formData.email, formData.nombre)
+
+      const { data: profileData, error: profileError } = await supabase
         .from("users")
         .insert({
-          id: authData.user.id,
+          auth_user_id: authData.user.id,
+          username,
           email: formData.email,
-          nombre: formData.nombre,
-          telefono: formData.telefono,
-          ubicacion: formData.ubicacion,
-          user_type: userType,
-          created_at: new Date().toISOString(),
+          full_name: formData.nombre,
+          phone: formData.telefono,
+          role,
         })
+        .select("id")
+        .single()
 
       if (profileError) {
         setError(profileError.message)
@@ -138,16 +146,15 @@ export default function RegistroPage() {
         return
       }
 
-      // If seller, create store
-      if (userType === "vendedor") {
+      if (userType === "vendedor" && profileData) {
         const { error: storeError } = await supabase
           .from("sellers")
           .insert({
-            user_id: authData.user.id,
+            user_id: profileData.id,
             store_name: formData.storeName,
+            location: formData.ubicacion,
             description: "",
             is_verified: false,
-            created_at: new Date().toISOString(),
           })
 
         if (storeError) {

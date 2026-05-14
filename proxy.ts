@@ -1,7 +1,7 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
+import { createServerClient, type CookieOptions } from "@supabase/ssr"
+import { NextResponse, type NextRequest } from "next/server"
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -42,25 +42,22 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Rutas protegidas que requieren autenticación
-  const protectedRoutes = ['/perfil', '/carrito', '/admin']
-  const isProtectedRoute = protectedRoutes.some(route => request.nextUrl.pathname.startsWith(route))
+  const protectedRoutes = ["/perfil", "/carrito", "/admin"]
+  const isProtectedRoute = protectedRoutes.some((route) => request.nextUrl.pathname.startsWith(route))
 
-  // Si es una ruta protegida y no hay usuario autenticado, redirigir a login
   if (isProtectedRoute && !user) {
-    return NextResponse.redirect(new URL('/iniciar-sesion', request.url))
+    return NextResponse.redirect(new URL("/iniciar-sesion", request.url))
   }
 
-  // Si intenta acceder a /admin sin ser admin, redirigir
-  if (request.nextUrl.pathname.startsWith('/admin') && user) {
+  if (request.nextUrl.pathname.startsWith("/admin") && user) {
     const { data: userData } = await supabase
-      .from('users')
-      .select('user_type')
-      .eq('id', user.id)
+      .from("users")
+      .select("role")
+      .eq("auth_user_id", user.id)
       .single()
 
-    if (userData?.user_type !== 'admin') {
-      return NextResponse.redirect(new URL('/', request.url))
+    if (userData?.role !== "admin") {
+      return NextResponse.redirect(new URL("/", request.url))
     }
   }
 
@@ -68,7 +65,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico).*)',
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 }
