@@ -9,11 +9,29 @@ type Product = {
   main_image_url: string | null
 }
 
+type GroqContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+
+type GroqChatMessage = {
+  role: "system" | "user" | "assistant"
+  content: string | GroqContentPart[]
+}
+
 const SYSTEM_PROMPT =
   "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency. Keep responses concise."
 
+const QUERY_REWRITE_SYSTEM_PROMPT =
+  "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas."
+
+const IMAGE_DESCRIPTION_PROMPT =
+  "Describe esta imagen para un buscador de productos tecnológicos y electrónicos. Identifica componentes, módulos, placas, sensores, cables, herramientas, etiquetas visibles, conectores, usos probables y palabras clave de búsqueda. Responde en español con una descripción breve y concreta."
+
+const IMAGE_CONTEXT_SYSTEM_PROMPT =
+  "Eres un analista de contexto para RAG de una tienda de electrónica. Convierte una descripción visual y el texto opcional del usuario en una consulta de búsqueda útil para la base de datos. Incluye nombres de componentes, categorías, usos y sinónimos relevantes. Responde solo con la consulta final, sin explicaciones."
 
 const MAX_SEARCH_QUERY_LENGTH = 400
+const MAX_IMAGE_DATA_URL_LENGTH = 4 * 1024 * 1024
 
 function sanitizeSearchQuery(input: string): string {
   return input
@@ -40,13 +58,14 @@ const env = {
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   groqModel: process.env.GROQ_MODEL ?? "llama-3.1-8b-instant",
+  groqVisionModel: process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct",
 }
 
 function detectIntent(query: string): string {
   const lower = query.toLowerCase()
   if (/(kit|project|proyecto|armar|build)/.test(lower)) return "project_build"
   if (/(precio|barato|budget|presupuesto)/.test(lower)) return "budget"
-  if (/(sensor|arduino|raspberry|iot|robot|automat)/.test(lower)) return "component_search"
+  if (/(sensor|arduino|raspberry|iot|robot|automat|imagen|foto|fotografía)/.test(lower)) return "component_search"
   return "general_shopping"
 }
 
@@ -73,12 +92,49 @@ function previewText(input: string, max = 120): string {
   return input.length > max ? `${input.slice(0, max)}…` : input
 }
 
+function summarizeDataUrl(dataUrl: string) {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)
+  return {
+    mimeType: match?.[1] ?? "unknown",
+    length: dataUrl.length,
+    preview: previewText(dataUrl, 80),
+  }
+}
+
+function prepareMessagesForLog(messages: GroqChatMessage[]): GroqChatMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content)
+      ? message.content.map((part) =>
+          part.type === "image_url"
+            ? { ...part, image_url: { url: `[base64 image omitted from log: ${JSON.stringify(summarizeDataUrl(part.image_url.url))}]` } }
+            : part,
+        )
+      : message.content,
+  }))
+}
+
 function validateRequiredEnv() {
   const missing: string[] = []
   if (!env.supabaseUrl) missing.push("NEXT_PUBLIC_SUPABASE_URL")
   if (!env.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY")
   if (!env.groqApiKey) missing.push("GROQ_API_KEY")
   return missing
+}
+
+function isGenericImagePrompt(query: string): boolean {
+  return /^(buscar|busca|encuentra|encontrar) productos relacionados con (esta|la) fotograf[ií]a$/i.test(query.trim())
+}
+
+function validateImageDataUrl(imageDataUrl: string | undefined): string | null {
+  if (!imageDataUrl) return null
+  if (!/^data:image\/(png|jpe?g|webp);base64,[a-zA-Z0-9+/=]+$/.test(imageDataUrl)) {
+    return "La imagen debe ser PNG, JPG o WebP en formato base64."
+  }
+  if (imageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+    return "La imagen es demasiado grande. Usa una imagen menor a 4 MB."
+  }
+  return null
 }
 
 async function supabaseRequest(path: string, init: RequestInit = {}) {
@@ -89,15 +145,171 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
     "Content-Type": "application/json",
     ...init.headers,
   }
-  logStage("supabase_request_start", { path, method: init.method ?? "GET" })
+  logStage("supabase_request_start", {
+    path,
+    method: init.method ?? "GET",
+    body: typeof init.body === "string" ? init.body : undefined,
+  })
   return fetch(url, { ...init, headers })
 }
 
+async function requestGroqChat(params: {
+  stagePrefix: string
+  messages: GroqChatMessage[]
+  temperature: number
+  model?: string
+}) {
+  const model = params.model ?? env.groqModel
+  logStage(`${params.stagePrefix}_request_start`, {
+    model,
+    temperature: params.temperature,
+    messages: prepareMessagesForLog(params.messages),
+  })
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.groqApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      temperature: params.temperature,
+      messages: params.messages,
+    }),
+  })
+
+  logStage(`${params.stagePrefix}_response`, { status: res.status, ok: res.ok })
+  return res
+}
+
+async function readGroqTextResponse(res: Response): Promise<string> {
+  const aiJson = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  return aiJson.choices?.[0]?.message?.content?.trim() ?? ""
+}
+
+function cleanRewrittenQuery(input: string): string {
+  return sanitizeSearchQuery(input.replace(/^(\s*["'`]+)|(["'`]+\s*)$/g, ""))
+}
+
+async function describeImageToText(imageDataUrl: string, normalizedQuery: string): Promise<string> {
+  logStage("image_description_start", { image: summarizeDataUrl(imageDataUrl), normalizedQuery })
+
+  try {
+    const res = await requestGroqChat({
+      stagePrefix: "image_description_groq",
+      temperature: 0.1,
+      model: env.groqVisionModel,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `${IMAGE_DESCRIPTION_PROMPT}\n\nTexto opcional del usuario: ${normalizedQuery || "Sin texto adicional."}` },
+            { type: "image_url", image_url: { url: imageDataUrl } },
+          ],
+        },
+      ],
+    })
+
+    if (!res.ok) {
+      const responseText = await res.text()
+      logStage("image_description_failed", { status: res.status, error: responseText.slice(0, 300) })
+      return ""
+    }
+
+    const description = sanitizeSearchQuery(await readGroqTextResponse(res))
+    logStage("image_description_success", { description })
+    return description
+  } catch (error) {
+    logStage("image_description_exception", { message: error instanceof Error ? error.message : "unknown" })
+    return ""
+  }
+}
+
+async function buildSearchContextFromImage(params: {
+  normalizedQuery: string
+  imageDescription: string
+}): Promise<string> {
+  const fallback = sanitizeSearchQuery(`${params.normalizedQuery} ${params.imageDescription}`)
+  logStage("image_context_start", { normalizedQuery: params.normalizedQuery, imageDescription: params.imageDescription })
+
+  if (!params.imageDescription) return params.normalizedQuery
+
+  try {
+    const res = await requestGroqChat({
+      stagePrefix: "image_context_groq",
+      temperature: 0,
+      messages: [
+        { role: "system", content: IMAGE_CONTEXT_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: `Texto del usuario: ${params.normalizedQuery || "Sin texto adicional."}\nDescripción visual: ${params.imageDescription}`,
+        },
+      ],
+    })
+
+    if (!res.ok) {
+      const responseText = await res.text()
+      logStage("image_context_failed", { status: res.status, error: responseText.slice(0, 300), fallback })
+      return fallback
+    }
+
+    const searchContext = cleanRewrittenQuery(await readGroqTextResponse(res))
+    logStage("image_context_success", { searchContext, fallbackUsed: !searchContext })
+    return searchContext || fallback
+  } catch (error) {
+    logStage("image_context_exception", { message: error instanceof Error ? error.message : "unknown", fallback })
+    return fallback
+  }
+}
+
+async function rewriteSearchQuery(normalizedQuery: string): Promise<string> {
+  logStage("query_rewrite_start", {
+    normalizedQueryLength: normalizedQuery.length,
+    normalizedQuery,
+  })
+
+  try {
+    const res = await requestGroqChat({
+      stagePrefix: "query_rewrite_groq",
+      temperature: 0,
+      messages: [
+        { role: "system", content: QUERY_REWRITE_SYSTEM_PROMPT },
+        { role: "user", content: normalizedQuery },
+      ],
+    })
+
+    if (!res.ok) {
+      const responseText = await res.text()
+      logStage("query_rewrite_failed", { status: res.status, error: responseText.slice(0, 200) })
+      return normalizedQuery
+    }
+
+    const rawOutput = await readGroqTextResponse(res)
+    const rewrittenQuery = cleanRewrittenQuery(rawOutput)
+    logStage("query_rewrite_raw_output", { aiOutput: rawOutput })
+
+    if (!rewrittenQuery) {
+      logStage("query_rewrite_empty_output", { fallbackQuery: normalizedQuery })
+      return normalizedQuery
+    }
+
+    logStage("query_rewrite_success", {
+      normalizedQuery,
+      rewrittenQuery,
+      changed: rewrittenQuery !== normalizedQuery,
+    })
+    return rewrittenQuery
+  } catch (error) {
+    logStage("query_rewrite_exception", { message: error instanceof Error ? error.message : "unknown" })
+    return normalizedQuery
+  }
+}
+
 async function retrieveProducts(query: string): Promise<Product[]> {
-  const cleanQuery = sanitizeSearchQuery(query)
+  const cleanQuery = query
   const select = "id,name,short_description,retail_price,stock,main_image_url"
   logStage("retrieve_start", {
-    rawQueryLength: query.length,
     cleanQueryLength: cleanQuery.length,
     cleanQueryPreview: previewText(cleanQuery),
   })
@@ -165,27 +377,74 @@ export async function POST(req: Request) {
       logStage("missing_env", { missingEnv })
       return NextResponse.json({ error: `Configuración incompleta: ${missingEnv.join(", ")}` }, { status: 500 })
     }
-    logStage("env_ok", { supabaseUrlConfigured: Boolean(env.supabaseUrl), groqModel: env.groqModel })
+    logStage("env_ok", {
+      supabaseUrlConfigured: Boolean(env.supabaseUrl),
+      groqModel: env.groqModel,
+      groqVisionModel: env.groqVisionModel,
+    })
 
-    const body = (await req.json()) as { message?: string; userId?: string }
+    const body = (await req.json()) as { message?: string; userId?: string; imageDataUrl?: string }
     const rawQuery = body.message?.trim() ?? ""
+    const hasImage = Boolean(body.imageDataUrl)
+    const imageValidationError = validateImageDataUrl(body.imageDataUrl)
     logStage("request_body_parsed", {
       hasMessage: Boolean(body.message),
       rawQueryLength: rawQuery.length,
       rawQueryPreview: previewText(rawQuery),
       hasUserId: Boolean(body.userId),
+      hasImage,
+      image: body.imageDataUrl ? summarizeDataUrl(body.imageDataUrl) : undefined,
     })
 
-    if (!rawQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
+    if (imageValidationError) return NextResponse.json({ error: imageValidationError }, { status: 400 })
+    if (!rawQuery && !body.imageDataUrl) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
     const userId = body.userId ?? "anonymous"
-    const detectedIntent = detectIntent(rawQuery)
-    logStage("intent_detected", { userId, detectedIntent })
+    const normalizedQuery = sanitizeSearchQuery(rawQuery)
+    const queryForImageContext = hasImage && isGenericImagePrompt(normalizedQuery) ? "" : normalizedQuery
+    logStage("query_normalized", {
+      rawQueryLength: rawQuery.length,
+      normalizedQueryLength: normalizedQuery.length,
+      normalizedQuery,
+      queryForImageContext,
+      ignoredGenericImagePrompt: hasImage && normalizedQuery !== queryForImageContext,
+    })
+
+    let imageDescription = ""
+    let searchQuery = ""
+
+    if (body.imageDataUrl) {
+      imageDescription = await describeImageToText(body.imageDataUrl, queryForImageContext)
+      if (!imageDescription && !queryForImageContext) {
+        const explanation = "No pude interpretar la fotografía. Intenta tomarla con más luz o agrega una descripción del componente."
+        logStage("image_description_unavailable", { explanation })
+        return NextResponse.json({
+          intent: "component_search",
+          response: explanation,
+          products: [],
+          searchQuery: "",
+        })
+      }
+
+      const imageSearchContext = await buildSearchContextFromImage({
+        normalizedQuery: queryForImageContext,
+        imageDescription,
+      })
+      searchQuery = await rewriteSearchQuery(imageSearchContext || imageDescription || queryForImageContext)
+    } else {
+      if (!normalizedQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
+      searchQuery = await rewriteSearchQuery(normalizedQuery)
+    }
+
+    if (!searchQuery) return NextResponse.json({ error: "No fue posible interpretar la consulta" }, { status: 400 })
+
+    const detectedIntent = detectIntent(searchQuery)
+    logStage("intent_detected", { userId, detectedIntent, queryUsedForIntent: searchQuery, hasImage })
 
     let products: Product[] = []
     try {
-      products = await retrieveProducts(rawQuery)
-      logStage("retrieve_done", { productCount: products.length })
+      products = await retrieveProducts(searchQuery)
+      logStage("retrieve_done", { productCount: products.length, searchQuery })
     } catch (error) {
       logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })
@@ -197,51 +456,43 @@ export async function POST(req: Request) {
     let selectedProductIds: string[] = []
 
     if (products.length === 0) {
-      explanation =
-        "No encontré productos exactos. ¿Cuál es tu presupuesto, tipo de proyecto o categoría preferida?"
-      logStage("response_without_products", { explanationPreview: previewText(explanation) })
+      explanation = hasImage
+        ? "Analicé la imagen, pero no encontré productos exactos. Intenta con una foto más cercana del componente o agrega una descripción."
+        : "No encontré productos exactos. ¿Cuál es tu presupuesto, tipo de proyecto o categoría preferida?"
+      logStage("response_without_products", { explanationPreview: previewText(explanation), imageDescription, searchQuery })
     } else {
-      logStage("groq_request_start", { productCount: products.length, contextLength: context.length })
-      const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.groqApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: env.groqModel,
-          temperature: 0.3,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: `User query: ${rawQuery}
+      const aiRes = await requestGroqChat({
+        stagePrefix: "recommendation_groq",
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `User query original: ${rawQuery || "Búsqueda por imagen"}
+Descripción de imagen: ${imageDescription || "No aplica"}
+Consulta corregida para búsqueda: ${searchQuery}
 
 Product context:
 ${context}
 
 Devuelve una recomendación breve en español y usa explícitamente IDs de productos del contexto para los recomendados.
 Si recomiendas varios, incluye cada ID exacto en el texto.`,
-            },
-          ],
-        }),
+          },
+        ],
       })
-      logStage("groq_response", { status: aiRes.status, ok: aiRes.ok })
 
       if (!aiRes.ok) {
         const responseText = await aiRes.text()
-        logStage("groq_failed", { status: aiRes.status, error: responseText.slice(0, 200) })
+        logStage("recommendation_groq_failed", { status: aiRes.status, error: responseText.slice(0, 200) })
         explanation = `Encontré ${products.length} producto(s) relevante(s). ¿Quieres más detalles?`
       } else {
-        const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
-        explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
-        logStage("groq_raw_output", { aiOutput: explanation })
+        explanation = await readGroqTextResponse(aiRes)
+        logStage("recommendation_groq_raw_output", { aiOutput: explanation })
         if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
         selectedProductIds = extractRecommendedIdsFromText(explanation, products)
 
-        // Remove UUID patterns from the explanation
-        explanation = explanation.replace(/\s*\([a-f0-9\-]{36}\)\s*/gi, "")
-        logStage("groq_success", { explanationLength: explanation.length, explanationPreview: previewText(explanation) })
+        explanation = sanitizeUserFacingAiText(explanation)
+        logStage("recommendation_groq_success", { explanationLength: explanation.length, explanationPreview: previewText(explanation) })
       }
     }
 
@@ -263,30 +514,27 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
     }))
     logStage("response_products_built", { recommendedCount: recommendedProducts.length })
 
-    try {
-      const logRes = await supabaseRequest("assistant_queries", {
-        method: "POST",
-        headers: { Prefer: "return=minimal" },
-        body: JSON.stringify([
-          {
-            user_id: userId,
-            query: rawQuery,
-            detected_intent: detectedIntent,
-            explanation,
-            recommended_products_json: {
-              product_ids: recommendedProducts.map((p) => p.id),
-              products: recommendedProducts,
-            },
-          },
-        ]),
-      })
-      logStage("assistant_query_logged", { status: logRes.status, ok: logRes.ok })
-    } catch (logError) {
-      logStage("logging_failed", { message: logError instanceof Error ? logError.message : "unknown" })
-    }
+    logStage("assistant_query_terminal_log", {
+      userId,
+      rawQuery,
+      normalizedQuery,
+      hasImage,
+      image: body.imageDataUrl ? summarizeDataUrl(body.imageDataUrl) : undefined,
+      imageDescription,
+      searchQuery,
+      detectedIntent,
+      explanation,
+      recommendedProducts,
+    })
 
     logStage("request_success", { intent: detectedIntent, productCount: recommendedProducts.length })
-    return NextResponse.json({ intent: detectedIntent, response: explanation, products: recommendedProducts })
+    return NextResponse.json({
+      intent: detectedIntent,
+      response: explanation,
+      products: recommendedProducts,
+      imageDescription: imageDescription || undefined,
+      searchQuery,
+    })
   } catch (error) {
     logStage("unhandled_exception", { message: error instanceof Error ? error.message : "unknown" })
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
