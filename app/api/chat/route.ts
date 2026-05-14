@@ -7,11 +7,17 @@ type Product = {
   retail_price: number
   stock: number
   main_image_url: string | null
-  rank?: number
 }
 
 const SYSTEM_PROMPT =
   "You are the TechHub. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency."
+
+const env = {
+  supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+  supabaseServiceRoleKey:
+    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
+  openAiKey: process.env.OPENAI_API_KEY ?? process.env.OPEN_API_KEY ?? "",
+}
 
 function detectIntent(query: string): string {
   const lower = query.toLowerCase()
@@ -30,11 +36,24 @@ function buildContext(products: Product[]): string {
     .join("\n")
 }
 
+function logStage(stage: string, details: Record<string, unknown>) {
+  console.log(JSON.stringify({ scope: "api/chat", stage, ...details }))
+}
+
+function validateRequiredEnv() {
+  const missing: string[] = []
+  if (!env.supabaseUrl) missing.push("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
+  if (!env.supabaseServiceRoleKey)
+    missing.push("SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY fallback)")
+  if (!env.openAiKey) missing.push("OPENAI_API_KEY (or OPEN_API_KEY)")
+  return missing
+}
+
 async function supabaseRequest(path: string, init: RequestInit = {}) {
-  const url = `${process.env.SUPABASE_URL}/rest/v1/${path}`
+  const url = `${env.supabaseUrl}/rest/v1/${path}`
   const headers = {
-    apikey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
+    apikey: env.supabaseServiceRoleKey,
+    Authorization: `Bearer ${env.supabaseServiceRoleKey}`,
     "Content-Type": "application/json",
     ...init.headers,
   }
@@ -42,17 +61,34 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 }
 
 async function retrieveProducts(query: string): Promise<Product[]> {
-  const encoded = encodeURIComponent(query.trim())
+  const cleanQuery = query.trim()
+  const encoded = encodeURIComponent(cleanQuery)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
-  // Lightweight RAG retrieval using Supabase full-text operators on indexed textual fields.
-  const path = `products?select=${select}&or=(name.fts.${encoded},short_description.fts.${encoded},tags.fts.${encoded})&limit=5`
-  const res = await supabaseRequest(path)
 
-  if (!res.ok) {
-    throw new Error(`Supabase retrieve failed (${res.status})`)
+  // 1) Try full-text search first (websearch syntax is more tolerant for natural phrases).
+  const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=5`
+  const ftsRes = await supabaseRequest(ftsPath)
+
+  if (ftsRes.ok) {
+    const rows = (await ftsRes.json()) as Product[]
+    return rows.slice(0, 5)
   }
 
-  const rows = (await res.json()) as Product[]
+  const ftsErrorBody = await ftsRes.text()
+  logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
+
+  // 2) Minimal fallback: ILIKE to avoid hard 502 on parser/index issues.
+  const like = encodeURIComponent(`%${cleanQuery}%`)
+  const ilikePath = `products?select=${select}&or=(name.ilike.${like},short_description.ilike.${like},tags.ilike.${like})&limit=5`
+  const ilikeRes = await supabaseRequest(ilikePath)
+
+  if (!ilikeRes.ok) {
+    const ilikeErrorBody = await ilikeRes.text()
+    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
+    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
+  }
+
+  const rows = (await ilikeRes.json()) as Product[]
   return rows.slice(0, 5)
 }
 
@@ -66,12 +102,16 @@ async function logEvent(userId: string, eventType: string, payload: Record<strin
 
 export async function POST(req: Request) {
   try {
+    const missingEnv = validateRequiredEnv()
+    if (missingEnv.length > 0) {
+      logStage("missing_env", { missingEnv })
+      return NextResponse.json({ error: `Configuración incompleta: ${missingEnv.join(", ")}` }, { status: 500 })
+    }
+
     const body = (await req.json()) as { message?: string; userId?: string }
     const rawQuery = body.message?.trim() ?? ""
 
-    if (!rawQuery) {
-      return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
-    }
+    if (!rawQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
     const userId = body.userId ?? "anonymous"
     const detectedIntent = detectIntent(rawQuery)
@@ -79,15 +119,15 @@ export async function POST(req: Request) {
     let products: Product[] = []
     try {
       products = await retrieveProducts(rawQuery)
-    } catch {
+      logStage("retrieve_ok", { count: products.length, intent: detectedIntent })
+    } catch (error) {
+      logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })
     }
 
     const context = buildContext(products)
-    const noProductsGuidance =
-      "No matching products were found. Ask a concise clarification about budget, use case, preferred category, and project type."
-
     let explanation = ""
+
     if (products.length === 0) {
       explanation =
         "No encontré productos exactos todavía. ¿Cuál es tu presupuesto, uso principal, categoría preferida y tipo de proyecto?"
@@ -95,7 +135,7 @@ export async function POST(req: Request) {
       const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          Authorization: `Bearer ${env.openAiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -106,23 +146,21 @@ export async function POST(req: Request) {
             { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
-              content: `User query: ${rawQuery}\n\nProduct context:\n${context || noProductsGuidance}\n\nRules: never invent products; only use product IDs from context. Keep it concise and sales-oriented.`,
+              content: `User query: ${rawQuery}\n\nProduct context:\n${context}\n\nRules: never invent products; only use product IDs from context. Keep it concise and sales-oriented.`,
             },
           ],
         }),
       })
 
       if (!aiRes.ok) {
+        const responseText = await aiRes.text()
+        logStage("openai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
         return NextResponse.json({ error: "No fue posible generar respuesta de IA" }, { status: 502 })
       }
 
-      const aiJson = (await aiRes.json()) as {
-        choices?: Array<{ message?: { content?: string } }>
-      }
+      const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
       explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
-      if (!explanation) {
-        explanation = "Encontré productos relevantes. ¿Quieres que te recomiende por presupuesto o por tipo de proyecto?"
-      }
+      if (!explanation) explanation = "Encontré productos relevantes. ¿Quieres que te recomiende por presupuesto o por tipo de proyecto?"
     }
 
     const recommendedProducts = products.map((p) => ({
@@ -156,12 +194,9 @@ export async function POST(req: Request) {
       recommended_count: recommendedProducts.length,
     })
 
-    return NextResponse.json({
-      intent: detectedIntent,
-      response: explanation,
-      products: recommendedProducts,
-    })
-  } catch {
+    return NextResponse.json({ intent: detectedIntent, response: explanation, products: recommendedProducts })
+  } catch (error) {
+    logStage("unhandled_exception", { message: error instanceof Error ? error.message : "unknown" })
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
   }
 }
