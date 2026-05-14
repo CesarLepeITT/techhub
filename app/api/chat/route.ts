@@ -10,7 +10,7 @@ type Product = {
 }
 
 const SYSTEM_PROMPT =
-  "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. Keep responses concise."
+  "You are the TechHub assistant. Use the provided product context to recommend tech products. Always include the product price. Keep responses concise. text without any bold or italic formatting"
 
 const QUERY_REWRITE_SYSTEM_PROMPT =
   "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas. La corrección de ortografía es la prioridad; asegúrate de corregir palabras mal escritas. Asegurate de poner tildes."
