@@ -123,6 +123,21 @@ export default function CarritoPage() {
     )
   }
 
+  if (!user) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background gap-4">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-foreground mb-2">No autorizado</h1>
+          <p className="text-muted-foreground mb-4">Por favor inicia sesión para ver tu carrito</p>
+          <Link href="/iniciar-sesion">
+            <Button>Ir a iniciar sesión</Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
