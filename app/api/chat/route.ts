@@ -97,23 +97,6 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   return rows.slice(0, 5)
 }
 
-  const ftsErrorBody = await ftsRes.text()
-  logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
-
-  // 2) Minimal fallback: ILIKE to avoid hard 502 on parser/index issues.
-  const like = encodeURIComponent(`%${cleanQuery}%`)
-  const ilikePath = `products?select=${select}&or=(name.ilike.${like},short_description.ilike.${like},tags.ilike.${like})&limit=5`
-  const ilikeRes = await supabaseRequest(ilikePath)
-
-  if (!ilikeRes.ok) {
-    const ilikeErrorBody = await ilikeRes.text()
-    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
-    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
-  }
-
-  const rows = (await ilikeRes.json()) as Product[]
-  return rows.slice(0, 5)
-}
 
 async function logEvent(userId: string, eventType: string, payload: Record<string, unknown>) {
   await supabaseRequest("user_events", {
