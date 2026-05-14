@@ -71,7 +71,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         .eq("auth_user_id", userId)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error("Error fetching user profile from database:", error)
+        throw error
+      }
 
       const normalizedUser: User = {
         id: data.id,
@@ -91,6 +94,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setUser(normalizedUser)
     } catch (error) {
       console.error("Error fetching user profile:", error)
+      setUser(null)
+      setIsAuthenticated(false)
     }
   }
 
