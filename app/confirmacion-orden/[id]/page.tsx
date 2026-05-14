@@ -38,6 +38,7 @@ type OrderDetail = {
   total: number
   shipping_method: string
   payment_method: string
+  notes: string | null
   shipping_address: string
   shipping_city: string
   shipping_state: string
@@ -86,8 +87,20 @@ function getPaymentLabel(paymentMethod: string) {
     cash_on_delivery: "Pago contra entrega",
     pickup_payment: "Pago al recoger",
     card: "Tarjeta",
+    crypto: "Cripto",
   }
   return labels[paymentMethod] || paymentMethod
+}
+
+function getCryptoLabel(notes: string | null) {
+  if (!notes || !notes.startsWith("crypto|")) return null
+
+  const assetMatch = notes.match(/asset=([^|]+)/)
+  const walletMatch = notes.match(/wallet=([^|]+)/)
+  const asset = assetMatch?.[1] || "Cripto"
+  const wallet = walletMatch?.[1] || "Wallet"
+
+  return `${asset} via ${wallet}`
 }
 
 export default function ConfirmacionOrdenPage() {
@@ -294,7 +307,9 @@ export default function ConfirmacionOrdenPage() {
               <h2 className="text-lg font-semibold text-foreground">Metodo de pago</h2>
             </div>
             <div className="space-y-2 text-sm">
-              <p className="text-muted-foreground">{getPaymentLabel(order.payment_method)}</p>
+              <p className="text-muted-foreground">
+                {getCryptoLabel(order.notes) || getPaymentLabel(order.payment_method)}
+              </p>
               <p className="font-medium text-foreground">Metodo de envio: {order.shipping_method}</p>
             </div>
           </div>

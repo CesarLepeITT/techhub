@@ -9,7 +9,10 @@
       "Bash(git commit -m ' *)",
       "PowerShell(Get-Content *)",
       "Bash(npm run *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Latitude 7390\\\\desktop\\\\TechHub\" -Recurse -Include \"asistente\", \"buscar-imagen\", \"hero-section.tsx\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\Latitude 7390\\\\desktop\\\\TechHub\\\\app\\\\buscar-imagen\")"
     ]
   }
 }

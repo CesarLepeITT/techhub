@@ -378,12 +378,13 @@ export async function createOrder(
     tax: number
     total: number
     shipping_method: "standard" | "express" | "pickup"
-    payment_method: "cash_on_delivery" | "transfer" | "pickup_payment" | "card"
+    payment_method: "cash_on_delivery" | "transfer" | "pickup_payment" | "card" | "crypto"
     shipping_address: string
     shipping_city: string
     shipping_state: string
     shipping_postal_code: string
     estimated_delivery: string
+    notes?: string
   }
 ) {
   const cart = await getOrCreateCart(userId)
@@ -407,6 +408,7 @@ export async function createOrder(
       shipping_state: orderData.shipping_state,
       shipping_postal_code: orderData.shipping_postal_code,
       estimated_delivery_date: orderData.estimated_delivery,
+      notes: orderData.notes,
     })
     .select()
     .single()
@@ -504,6 +506,7 @@ export async function getOrderById(orderId: string) {
       total,
       shipping_method,
       payment_method,
+      notes,
       shipping_address,
       shipping_city,
       shipping_state,
@@ -533,6 +536,7 @@ export async function getOrderById(orderId: string) {
       ? {
           ...data,
           estimated_delivery: data.estimated_delivery_date,
+          notes: data.notes,
           order_items:
             data.order_items?.map((item) => ({
               id: item.id,

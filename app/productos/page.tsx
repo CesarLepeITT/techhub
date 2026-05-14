@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -57,6 +57,25 @@ export default function ProductosPage() {
   const [sortBy, setSortBy] = useState("relevance")
   const [showFilters, setShowFilters] = useState(false)
   const [showSortDropdown, setShowSortDropdown] = useState(false)
+  const [suggestions, setSuggestions] = useState<Product[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const buscar = params.get("buscar")
+    if (buscar) setSearchQuery(buscar)
+  }, [])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   useEffect(() => {
     loadData()
@@ -86,12 +105,26 @@ export default function ProductosPage() {
 
   useEffect(() => {
     let filteredProducts = [...allProducts]
+    const trimmed = searchQuery.trim()
 
-    if (searchQuery.trim()) {
-      const query = searchQuery.trim().toLowerCase()
+    if (trimmed) {
+      const query = trimmed.toLowerCase()
       filteredProducts = filteredProducts.filter((product) =>
         product.name.toLowerCase().includes(query)
       )
+      if (trimmed.length >= 2) {
+        setSuggestions(
+          allProducts
+            .filter((p) => p.name.toLowerCase().includes(query))
+            .slice(0, 6)
+        )
+      } else {
+        setSuggestions([])
+        setShowSuggestions(false)
+      }
+    } else {
+      setSuggestions([])
+      setShowSuggestions(false)
     }
 
     if (selectedCategory !== "all") {
@@ -185,15 +218,52 @@ export default function ProductosPage() {
 
           {/* Search Bar */}
           <div className="mb-6 flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <div ref={searchContainerRef} className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <input
                 type="text"
                 placeholder="Buscar productos..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  if (e.target.value.trim().length >= 2) setShowSuggestions(true)
+                  else setShowSuggestions(false)
+                }}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestions(true)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setShowSuggestions(false)
+                }}
                 className="w-full rounded-lg border border-border bg-background py-3 pl-10 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
               />
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-border bg-card shadow-elevated">
+                  {suggestions.map((product) => (
+                    <button
+                      key={product.id}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setSearchQuery(product.name)
+                        setShowSuggestions(false)
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary cursor-pointer"
+                    >
+                      <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-md bg-secondary">
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{product.name}</p>
+                        <p className="text-xs text-primary">${product.price.toFixed(2)}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <Button
               onClick={() => setShowFilters(!showFilters)}
