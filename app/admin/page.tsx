@@ -22,6 +22,7 @@ import {
   DollarSign,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { SmartInput } from "@/components/ui/smart-input"
 
 type TabType = "overview" | "products" | "orders" | "users"
 
@@ -339,16 +340,15 @@ export default function AdminPage() {
           <div className="rounded-xl border border-border bg-card shadow-soft">
             <div className="border-b border-border p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Buscar productos..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                  />
-                </div>
+                <SmartInput
+                  type="search"
+                  value={searchQuery}
+                  onValueChange={setSearchQuery}
+                  placeholder="Buscar productos..."
+                  leftIcon={<Search className="h-4 w-4" />}
+                  wrapperClassName="flex-1 min-w-0"
+                  inputClassName="h-10 rounded-lg border-border bg-background py-2.5 text-sm shadow-none"
+                />
                 <Button className="rounded-lg bg-primary hover:bg-primary/90 cursor-pointer">
                   <Plus className="mr-2 h-4 w-4" />
                   Nuevo producto
@@ -414,14 +414,15 @@ export default function AdminPage() {
           <div className="rounded-xl border border-border bg-card shadow-soft">
             <div className="border-b border-border p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Buscar Ã³rdenes..."
-                    className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                  />
-                </div>
+                <SmartInput
+                  type="search"
+                  value={searchQuery}
+                  onValueChange={setSearchQuery}
+                  placeholder="Buscar Ã³rdenes..."
+                  leftIcon={<Search className="h-4 w-4" />}
+                  wrapperClassName="flex-1 min-w-0"
+                  inputClassName="h-10 rounded-lg border-border bg-background py-2.5 text-sm shadow-none"
+                />
                 <Button variant="outline" className="rounded-lg cursor-pointer">
                   <Filter className="mr-2 h-4 w-4" />
                   Filtrar
@@ -471,14 +472,15 @@ export default function AdminPage() {
           <div className="rounded-xl border border-border bg-card shadow-soft">
             <div className="border-b border-border p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Buscar usuarios..."
-                    className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-text"
-                  />
-                </div>
+                <SmartInput
+                  type="search"
+                  value={searchQuery}
+                  onValueChange={setSearchQuery}
+                  placeholder="Buscar usuarios..."
+                  leftIcon={<Search className="h-4 w-4" />}
+                  wrapperClassName="flex-1 min-w-0"
+                  inputClassName="h-10 rounded-lg border-border bg-background py-2.5 text-sm shadow-none"
+                />
                 <Button variant="outline" className="rounded-lg cursor-pointer">
                   <Filter className="mr-2 h-4 w-4" />
                   Filtrar

@@ -1,11 +1,13 @@
 import Image from "next/image"
 
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=400&fit=crop"
+
 export type ChatProduct = {
   id: string
   name: string
   retail_price: number
   stock: number
-  main_image_url: string | null
+  image_url: string | null
 }
 
 function formatPrice(price: number): string {
@@ -17,15 +19,18 @@ function formatPrice(price: number): string {
 }
 
 export function ProductRecommendationCard({ product }: { product: ChatProduct }) {
+  const imageUrl = product.image_url || FALLBACK_IMAGE
+
   return (
-    <a href={`/productos/${product.id}`} className="flex gap-3 rounded-lg bg-card p-3 shadow-soft transition-lift">
+    <a href={`/producto/${product.id}`} className="flex gap-3 rounded-lg bg-card p-3 shadow-soft transition-lift">
       <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-secondary/30">
         <Image
-          src={product.main_image_url || "/placeholder.jpg"}
+          src={imageUrl}
           alt={product.name}
           fill
           className="object-cover"
           sizes="64px"
+          unoptimized
         />
       </div>
       <div className="min-w-0 flex-1">

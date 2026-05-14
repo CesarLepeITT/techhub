@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState } from "react"
 import Link from "next/link"
-import { Search, Sparkles, ArrowRight, Truck, TrendingUp, Package, Play, Send, RefreshCw } from "lucide-react"
+import { Sparkles, ArrowRight, Truck, TrendingUp, Package, Play, Send, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { SmartInput } from "@/components/ui/smart-input"
+import { CameraCapture } from "@/components/ui/camera-capture"
 import { ProductRecommendationCard, type ChatProduct } from "@/components/asistente/product-recommendation-card"
 
 const suggestions = [
@@ -85,12 +87,7 @@ export function HeroSection() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState("")
   const [isTyping, setIsTyping] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, isTyping])
+  const [cameraOpen, setCameraOpen] = useState(false)
 
   const handleSubmit = async (prompt: string) => {
     if (!prompt.trim() || isTyping) return
@@ -150,52 +147,49 @@ export function HeroSection() {
           {/* Chat or Search Box */}
           {messages.length === 0 ? (
             <div className="mx-auto mb-8 max-w-2xl">
-              <div className="relative rounded-xl border border-border bg-card p-1.5 shadow-elevated">
-                <div className="flex flex-col gap-3 rounded-lg bg-card px-4 py-3 sm:flex-row sm:items-center">
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                      <Sparkles className="h-5 w-5 text-primary" />
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="Describe lo que necesitas construir..."
+              {cameraOpen ? (
+                <CameraCapture onClose={() => setCameraOpen(false)} />
+              ) : (
+                <div className="relative rounded-xl border border-border bg-card p-1.5 shadow-elevated">
+                  <div className="flex flex-col gap-3 rounded-lg bg-card px-4 py-3 sm:flex-row sm:items-center">
+                    <SmartInput
                       value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          handleSubmit(inputValue)
-                        }
-                      }}
-                      className="min-w-0 flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none cursor-text"
+                      onValueChange={setInputValue}
+                      onSubmit={() => handleSubmit(inputValue)}
+                      onCameraClick={() => setCameraOpen(true)}
+                      placeholder="Describe lo que necesitas construir..."
+                      leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                      wrapperClassName="flex-1 min-w-0"
+                      inputClassName="h-12 rounded-xl border-border bg-background text-base shadow-none"
                     />
+                    <Button
+                      type="submit"
+                      className="rounded-xl bg-primary px-5 hover:bg-primary/90 cursor-pointer"
+                      disabled={!inputValue.trim() || isTyping}
+                      onClick={() => handleSubmit(inputValue)}
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button
-                    type="submit"
-                    className="rounded-xl bg-primary px-5 hover:bg-primary/90 cursor-pointer"
-                    disabled={!inputValue.trim() || isTyping}
-                    onClick={() => handleSubmit(inputValue)}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
 
-                {/* Suggestions */}
-                <div className="rounded-lg border-t border-border bg-card p-4">
-                  <p className="mb-3 text-center text-xs font-medium text-muted-foreground">Prueba con estos ejemplos</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {suggestions.map((suggestion, index) => (
-                      <button
-                        key={index}
-                        className="group flex items-center gap-3 rounded-lg bg-secondary p-3 text-left text-sm text-foreground transition-colors hover:bg-primary/10 cursor-pointer"
-                        onClick={() => handleSubmit(suggestion)}
-                      >
-                        <span className="line-clamp-2">{suggestion}</span>
-                        <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                      </button>
-                    ))}
+                  {/* Suggestions */}
+                  <div className="rounded-lg border-t border-border bg-card p-4">
+                    <p className="mb-3 text-center text-xs font-medium text-muted-foreground">Prueba con estos ejemplos</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {suggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          className="group flex items-center gap-3 rounded-lg bg-secondary p-3 text-left text-sm text-foreground transition-colors hover:bg-primary/10 cursor-pointer"
+                          onClick={() => handleSubmit(suggestion)}
+                        >
+                          <span className="line-clamp-2">{suggestion}</span>
+                          <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <div className="mx-auto mb-8 max-w-2xl rounded-xl border border-border bg-card shadow-elevated overflow-hidden flex flex-col h-96">
@@ -217,34 +211,40 @@ export function HeroSection() {
                     </div>
                   </div>
                 )}
-                <div ref={messagesEndRef} />
               </div>
 
               {/* Input */}
               <div className="sticky bottom-0 border-t border-border bg-card px-4 py-3">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    handleSubmit(inputValue)
-                  }}
-                  className="flex items-center gap-3"
-                >
-                  <input
-                    type="text"
-                    placeholder="Escribe un mensaje..."
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    className="flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none cursor-text"
-                  />
-                  <Button
-                    type="submit"
-                    size="icon"
-                    className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 cursor-pointer"
-                    disabled={!inputValue.trim() || isTyping}
+                {cameraOpen ? (
+                  <CameraCapture onClose={() => setCameraOpen(false)} />
+                ) : (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      handleSubmit(inputValue)
+                    }}
+                    className="flex items-center gap-3"
                   >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </form>
+                    <SmartInput
+                      value={inputValue}
+                      onValueChange={setInputValue}
+                      onSubmit={() => handleSubmit(inputValue)}
+                      onCameraClick={() => setCameraOpen(true)}
+                      placeholder="Escribe un mensaje..."
+                      leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                      wrapperClassName="flex-1 min-w-0"
+                      inputClassName="h-11 rounded-xl border-border bg-background text-base shadow-none"
+                    />
+                    <Button
+                      type="submit"
+                      size="icon"
+                      className="h-10 w-10 rounded-xl bg-primary hover:bg-primary/90 cursor-pointer"
+                      disabled={!inputValue.trim() || isTyping}
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </form>
+                )}
               </div>
             </div>
           )}

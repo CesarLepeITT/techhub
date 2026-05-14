@@ -1,6 +1,6 @@
 "use client"
 
-import { KeyboardEvent, useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -17,7 +17,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useSession } from "@/components/SessionProvider"
-import { getCart } from "@/lib/supabase-queries"
+import { getCart, searchProducts } from "@/lib/supabase-queries"
+
+type Suggestion = {
+  id: string
+  name: string
+  image_url: string
+  price: number
+}
 
 const navigation = [
   { name: "Productos", href: "/productos", icon: LayoutGrid },
@@ -29,6 +36,11 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [cartItemCount, setCartItemCount] = useState(0)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const desktopSearchRef = useRef<HTMLDivElement>(null)
+  const mobileSearchRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const { user, logout } = useSession()
 
@@ -61,17 +73,73 @@ export function Header() {
     }
   }, [user])
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (
+        desktopSearchRef.current &&
+        !desktopSearchRef.current.contains(target) &&
+        mobileSearchRef.current &&
+        !mobileSearchRef.current.contains(target)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  const handleQueryChange = (value: string) => {
+    setSearchQuery(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+
+    if (value.trim().length < 2) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    debounceRef.current = setTimeout(async () => {
+      const { data } = await searchProducts(value.trim())
+      setSuggestions(data.slice(0, 6) as Suggestion[])
+      setShowSuggestions(data.length > 0)
+    }, 280)
+  }
+
   const handleSearch = () => {
     const query = searchQuery.trim()
+    setShowSuggestions(false)
     setMobileMenuOpen(false)
     router.push(query ? `/productos?buscar=${encodeURIComponent(query)}` : "/productos")
   }
 
-  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      handleSearch()
-    }
+  const handleSuggestionClick = (suggestion: Suggestion) => {
+    setSearchQuery(suggestion.name)
+    setShowSuggestions(false)
+    setMobileMenuOpen(false)
+    router.push(`/producto/${suggestion.id}`)
   }
+
+  const SuggestionsDropdown = () => (
+    <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-border bg-card shadow-elevated">
+      {suggestions.map((s) => (
+        <button
+          key={s.id}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => handleSuggestionClick(s)}
+          className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary cursor-pointer"
+        >
+          <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md bg-secondary">
+            <img src={s.image_url} alt={s.name} className="h-full w-full object-cover" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-foreground">{s.name}</p>
+            <p className="text-xs text-primary">${s.price.toFixed(2)}</p>
+          </div>
+        </button>
+      ))}
+    </div>
+  )
 
   return (
     <>
@@ -101,16 +169,21 @@ export function Header() {
 
               <div className="flex items-center gap-2">
                 <div className="hidden items-center gap-2 lg:flex">
-                  <div className="relative w-64 xl:w-72">
+                  <div ref={desktopSearchRef} className="relative w-64 xl:w-72">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <input
                       type="search"
                       value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      onKeyDown={handleSearchKeyDown}
+                      onChange={(e) => handleQueryChange(e.target.value)}
+                      onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSearch()
+                        if (e.key === "Escape") setShowSuggestions(false)
+                      }}
                       placeholder="Buscar productos..."
                       className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
+                    {showSuggestions && suggestions.length > 0 && <SuggestionsDropdown />}
                   </div>
                   <Button variant="ghost" size="icon" className="rounded-lg cursor-pointer" onClick={handleSearch}>
                     <Search className="h-5 w-5" />
@@ -201,19 +274,23 @@ export function Header() {
         <div
           className={cn(
             "navbar-solid absolute left-0 right-0 top-14 overflow-hidden shadow-elevated transition-all duration-300",
-            mobileMenuOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+            mobileMenuOpen ? "max-h-[32rem] opacity-100" : "max-h-0 opacity-0"
           )}
         >
           <nav className="flex flex-col gap-1 p-4">
-            <div className="mb-2 rounded-lg border border-border bg-background p-2">
-              <div className="flex items-center gap-2">
+            <div ref={mobileSearchRef} className="relative mb-2">
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-2">
                 <div className="relative flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="search"
                     value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    onKeyDown={handleSearchKeyDown}
+                    onChange={(e) => handleQueryChange(e.target.value)}
+                    onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSearch()
+                      if (e.key === "Escape") setShowSuggestions(false)
+                    }}
                     placeholder="Buscar productos..."
                     className="w-full rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                   />
@@ -222,6 +299,7 @@ export function Header() {
                   Buscar
                 </Button>
               </div>
+              {showSuggestions && suggestions.length > 0 && <SuggestionsDropdown />}
             </div>
 
             {navigation.map((item) => (

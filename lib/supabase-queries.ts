@@ -10,6 +10,7 @@ type RawProductRow = {
   name: string
   short_description?: string | null
   full_description?: string | null
+  image_url?: string | null
   main_image_url?: string | null
   images_json?: unknown
   retail_price: number | string
@@ -48,7 +49,7 @@ function toStringArray(value: unknown): string[] {
 
 function normalizeProduct(row: RawProductRow) {
   const images = toStringArray(row.images_json)
-  const imageUrl = row.main_image_url || images[0] || FALLBACK_PRODUCT_IMAGE
+  const imageUrl = row.image_url || row.main_image_url || images[0] || FALLBACK_PRODUCT_IMAGE
 
   return {
     id: row.id,
@@ -128,6 +129,7 @@ export async function getProducts(limit = 20, offset = 0) {
       name,
       short_description,
       full_description,
+      image_url,
       main_image_url,
       images_json,
       retail_price,
@@ -163,6 +165,7 @@ export async function getProductById(id: string) {
       name,
       short_description,
       full_description,
+      image_url,
       main_image_url,
       images_json,
       retail_price,
@@ -197,6 +200,7 @@ export async function getProductsByCategory(categoryId: string) {
       name,
       short_description,
       full_description,
+      image_url,
       main_image_url,
       images_json,
       retail_price,
@@ -230,6 +234,7 @@ export async function searchProducts(query: string) {
       name,
       short_description,
       full_description,
+      image_url,
       main_image_url,
       images_json,
       retail_price,
@@ -271,6 +276,7 @@ export async function getCart(userId: string) {
         id,
         seller_id,
         name,
+        image_url,
         main_image_url,
         retail_price,
         wholesale_price,
@@ -289,6 +295,7 @@ export async function getCart(userId: string) {
           id: string
           seller_id: string
           name: string
+          image_url: string | null
           main_image_url: string | null
           retail_price: number | string
           wholesale_price: number | string | null
@@ -307,7 +314,7 @@ export async function getCart(userId: string) {
                 id: product.id,
                 seller_id: product.seller_id,
                 name: product.name,
-                image_url: product.main_image_url || FALLBACK_PRODUCT_IMAGE,
+                image_url: product.image_url || product.main_image_url || FALLBACK_PRODUCT_IMAGE,
                 price: toNumber(product.retail_price),
                 wholesale_price:
                   product.wholesale_price == null ? null : toNumber(product.wholesale_price),
@@ -378,12 +385,13 @@ export async function createOrder(
     tax: number
     total: number
     shipping_method: "standard" | "express" | "pickup"
-    payment_method: "cash_on_delivery" | "transfer" | "pickup_payment" | "card"
+    payment_method: "cash_on_delivery" | "transfer" | "pickup_payment" | "card" | "crypto"
     shipping_address: string
     shipping_city: string
     shipping_state: string
     shipping_postal_code: string
     estimated_delivery: string
+    notes?: string
   }
 ) {
   const cart = await getOrCreateCart(userId)
@@ -407,6 +415,7 @@ export async function createOrder(
       shipping_state: orderData.shipping_state,
       shipping_postal_code: orderData.shipping_postal_code,
       estimated_delivery_date: orderData.estimated_delivery,
+      notes: orderData.notes,
     })
     .select()
     .single()
@@ -459,7 +468,7 @@ export async function getUserOrders(userId: string) {
         unit_price,
         subtotal,
         product_name,
-        products(main_image_url)
+        products(image_url, main_image_url)
       )
       `
     )
@@ -481,7 +490,8 @@ export async function getUserOrders(userId: string) {
             products: {
               name: item.product_name,
               image_url:
-                (item.products as { main_image_url?: string | null } | null)?.main_image_url ||
+                (item.products as { image_url?: string | null; main_image_url?: string | null } | null)?.image_url ||
+                (item.products as { image_url?: string | null; main_image_url?: string | null } | null)?.main_image_url ||
                 FALLBACK_PRODUCT_IMAGE,
             },
           })) ?? [],
@@ -504,6 +514,7 @@ export async function getOrderById(orderId: string) {
       total,
       shipping_method,
       payment_method,
+      notes,
       shipping_address,
       shipping_city,
       shipping_state,
@@ -521,7 +532,7 @@ export async function getOrderById(orderId: string) {
         unit_price,
         subtotal,
         product_name,
-        products(main_image_url)
+        products(image_url, main_image_url)
       )
       `
     )
@@ -533,6 +544,7 @@ export async function getOrderById(orderId: string) {
       ? {
           ...data,
           estimated_delivery: data.estimated_delivery_date,
+          notes: data.notes,
           order_items:
             data.order_items?.map((item) => ({
               id: item.id,
@@ -542,7 +554,8 @@ export async function getOrderById(orderId: string) {
               subtotal: toNumber(item.subtotal),
               name: item.product_name,
               image:
-                (item.products as { main_image_url?: string | null } | null)?.main_image_url ||
+                (item.products as { image_url?: string | null; main_image_url?: string | null } | null)?.image_url ||
+                (item.products as { image_url?: string | null; main_image_url?: string | null } | null)?.main_image_url ||
                 FALLBACK_PRODUCT_IMAGE,
             })) ?? [],
         }
@@ -618,6 +631,7 @@ export async function getWishlist(userId: string) {
       products(
         id,
         name,
+        image_url,
         main_image_url,
         retail_price,
         stock
@@ -635,6 +649,7 @@ export async function getWishlist(userId: string) {
               id: (item.products as { id: string }).id,
               name: (item.products as { name: string }).name,
               image_url:
+                (item.products as { image_url?: string | null }).image_url ||
                 (item.products as { main_image_url?: string | null }).main_image_url ||
                 FALLBACK_PRODUCT_IMAGE,
               price: toNumber((item.products as { retail_price: number | string }).retail_price),
@@ -698,6 +713,7 @@ export async function getSellerProducts(sellerId: string) {
       name,
       short_description,
       full_description,
+      image_url,
       main_image_url,
       images_json,
       retail_price,
@@ -856,6 +872,7 @@ export async function getAllProducts() {
       name,
       short_description,
       full_description,
+      image_url,
       main_image_url,
       images_json,
       retail_price,
