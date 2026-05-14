@@ -59,6 +59,12 @@ function buildContext(products: Product[]): string {
     .join("\n")
 }
 
+function extractRecommendedIdsFromText(text: string, products: Product[]): string[] {
+  const availableIds = new Set(products.map((p) => p.id))
+  const found = text.match(/[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}/gi) ?? []
+  return [...new Set(found.map((id) => id.toLowerCase()).filter((id) => availableIds.has(id)))]
+}
+
 function logStage(stage: string, details: Record<string, unknown>) {
   console.log(JSON.stringify({ scope: "api/chat", stage, ...details }))
 }
@@ -180,6 +186,7 @@ export async function POST(req: Request) {
     const context = buildContext(products)
     logStage("context_built", { contextLength: context.length, productCount: products.length })
     let explanation = ""
+    let selectedProductIds: string[] = []
 
     if (products.length === 0) {
       explanation =
@@ -201,7 +208,13 @@ export async function POST(req: Request) {
             { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
-              content: `User query: ${rawQuery}\n\nProduct context:\n${context}\n\nRecommend products using only the product IDs and info provided. Be concise.`,
+              content: `User query: ${rawQuery}
+
+Product context:
+${context}
+
+Devuelve una recomendación breve en español y usa explícitamente IDs de productos del contexto para los recomendados.
+Si recomiendas varios, incluye cada ID exacto en el texto.`,
             },
           ],
         }),
@@ -216,6 +229,7 @@ export async function POST(req: Request) {
         const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
         explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
         if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
+        selectedProductIds = extractRecommendedIdsFromText(explanation, products)
 
         // Remove UUID patterns from the explanation
         explanation = explanation.replace(/\s*\([a-f0-9\-]{36}\)\s*/gi, "")
@@ -223,7 +237,16 @@ export async function POST(req: Request) {
       }
     }
 
-    const recommendedProducts = products.map((p) => ({
+    const productsToReturn = selectedProductIds.length > 0
+      ? products.filter((p) => selectedProductIds.includes(p.id))
+      : products
+    logStage("selected_products", {
+      selectedByAi: selectedProductIds.length > 0,
+      selectedProductIds,
+      returnedCount: productsToReturn.length,
+    })
+
+    const recommendedProducts = productsToReturn.map((p) => ({
       id: p.id,
       name: p.name,
       retail_price: p.retail_price,
