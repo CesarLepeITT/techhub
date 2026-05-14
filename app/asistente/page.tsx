@@ -95,7 +95,6 @@ export default function AssistantPage() {
 
   useEffect(() => {
     if (isCameraOpen && videoRef.current && cameraStreamRef.current) {
-      // Línea corregida aquí:
       videoRef.current.srcObject = cameraStreamRef.current
     }
   }, [isCameraOpen])
@@ -264,4 +263,123 @@ export default function AssistantPage() {
           
           {/* Mostramos errores de cámara si los hay */}
           {cameraError && (
-             <div className="mb-4 rounded-lg bg-destructive/15 p-3 text-sm text-
+             <div className="mb-4 rounded-lg bg-destructive/15 p-3 text-sm text-destructive">
+               {cameraError}
+             </div>
+          )}
+
+          {messages.length === 0 ? (
+            // VISTA INICIAL (Sin mensajes)
+            <div className="flex flex-1 flex-col items-center justify-center py-12">
+              <div className="mb-8 text-center">
+                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 shadow-soft">
+                  <Sparkles className="h-8 w-8 text-primary" />
+                </div>
+                <h1 className="mb-2 text-2xl font-bold text-foreground sm:text-3xl">Asistente IA</h1>
+                <p className="text-sm text-muted-foreground">Usa texto o la cámara para encontrar componentes.</p>
+              </div>
+
+              <div className="mb-8 w-full max-w-2xl">
+                {isCameraOpen ? (
+                  <CameraCapture onClose={() => setIsCameraOpen(false)} />
+                ) : (
+                  <div className="relative rounded-xl border border-border bg-card p-1.5 shadow-elevated">
+                    <div className="flex items-center gap-3 bg-card px-4 py-3">
+                      <SmartInput
+                        value={inputValue}
+                        onValueChange={setInputValue}
+                        onSubmit={() => handleSubmit(inputValue)}
+                        onCameraClick={() => setIsCameraOpen(true)}
+                        placeholder="Describe lo que quieres construir..."
+                        leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                        wrapperClassName="flex-1 min-w-0"
+                        inputClassName="h-12 rounded-xl border-border bg-background text-base shadow-none"
+                      />
+                      <Button 
+                        onClick={() => handleSubmit(inputValue)}
+                        disabled={!inputValue.trim() || isTyping}
+                        className="rounded-xl h-12 px-5"
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    <div className="rounded-lg border-t border-border bg-card p-4">
+                      <p className="mb-3 text-center text-xs font-medium text-muted-foreground">Prueba estos ejemplos</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {suggestedPrompts.map((prompt, index) => (
+                          <button
+                            key={index}
+                            className="group flex items-center gap-3 rounded-lg bg-secondary p-3 text-left text-sm text-foreground transition-colors hover:bg-primary/10"
+                            onClick={() => handleSubmit(prompt.text)}
+                          >
+                            <prompt.icon className="h-4 w-4 text-muted-foreground" />
+                            <span className="line-clamp-1">{prompt.text}</span>
+                            <ArrowRight className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            // VISTA DE CHAT (Con mensajes)
+            <div className="flex flex-1 flex-col">
+              <div className="flex-1 space-y-6 py-6">
+                {messages.map((message) => (
+                  <MessageBubble key={message.id} message={message} />
+                ))}
+                {isTyping && (
+                  <div className="flex gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                      <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                    </div>
+                    <div className="max-w-[90%] rounded-xl bg-card px-5 py-3 shadow-soft border border-border/50 flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+                      <span className="text-sm text-muted-foreground">Buscando productos...</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input Fijo Abajo */}
+              <div className="sticky bottom-0 bg-gradient-to-t from-background via-background to-transparent pb-6 pt-4">
+                {isCameraOpen ? (
+                  <div className="rounded-xl border border-border bg-card overflow-hidden shadow-elevated">
+                    <CameraCapture onClose={() => setIsCameraOpen(false)} />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 bg-card/80 backdrop-blur-md p-2 rounded-2xl border border-border/50 shadow-lg">
+                    <SmartInput
+                      value={inputValue}
+                      onValueChange={setInputValue}
+                      onSubmit={() => handleSubmit(inputValue)}
+                      onCameraClick={() => setIsCameraOpen(true)}
+                      placeholder="Escribe un mensaje..."
+                      leftIcon={<Sparkles className="h-5 w-5 text-primary" />}
+                      wrapperClassName="flex-1"
+                      inputClassName="h-11 border-none bg-transparent shadow-none"
+                    />
+                    <Button 
+                      size="icon" 
+                      onClick={() => handleSubmit(inputValue)}
+                      className="h-10 w-10 rounded-xl"
+                      disabled={!inputValue.trim() || isTyping}
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+      
+      <Footer />
+    </div>
+  )
+}
