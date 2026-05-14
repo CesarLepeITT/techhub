@@ -9,8 +9,55 @@ type Product = {
   main_image_url: string | null
 }
 
+type QueryRefinement = {
+  intent: string
+  main_topic: string
+  keywords: string[]
+  synonyms: string[]
+  related_technologies: string[]
+  error_terms: string[]
+  search_queries: string[]
+}
+
 const SYSTEM_PROMPT =
-  "You are the TechHub. Use the provided product context to recommend tech products. Always include the product price. If stock is below 5 units, mention urgency."
+  "You are the TechHub. Answer only with products present in PRODUCT_CONTEXT. Never invent products, IDs or prices. If context is weak, ask 1 concise clarification question. Always include price. If stock is below 5 units, mention urgency."
+
+const QUERY_REFINER_SYSTEM_PROMPT = `
+You are a search query optimizer for a technical knowledge base.
+
+Your task:
+Transform vague user questions into optimized technical search terms.
+
+Rules:
+- Return ONLY valid JSON
+- Do not explain anything
+- Extract:
+  - main topic
+  - technical keywords
+  - related technologies
+  - synonyms
+  - error terms if present
+  - intent
+
+Search optimization goals:
+- maximize database retrieval quality
+- include technical aliases
+- include framework/library names when implied
+- expand abbreviations
+- preserve original meaning
+
+JSON format:
+
+{
+  "intent": "string",
+  "main_topic": "string",
+  "keywords": [""],
+  "synonyms": [""],
+  "related_technologies": [""],
+  "error_terms": [""],
+  "search_queries": [""]
+}
+`;
 
 const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -58,6 +105,57 @@ function extractSearchTerms(query: string) {
   const phrase = mergedTokens.slice(0, 5).join(" ")
 
   return { normalized, tokens: mergedTokens, phrase }
+}
+
+function safeArray(input: unknown): string[] {
+  if (!Array.isArray(input)) return []
+  return input.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean)
+}
+
+async function refineQueryWithGroq(query: string): Promise<QueryRefinement> {
+  const fallback: QueryRefinement = {
+    intent: detectIntent(query),
+    main_topic: query,
+    keywords: [],
+    synonyms: [],
+    related_technologies: [],
+    error_terms: [],
+    search_queries: [query],
+  }
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.groqApiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: env.groqModel,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: QUERY_REFINER_SYSTEM_PROMPT },
+        { role: "user", content: query },
+      ],
+    }),
+  })
+
+  if (!res.ok) return fallback
+  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  const content = json.choices?.[0]?.message?.content ?? ""
+  if (!content) return fallback
+
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>
+    return {
+      intent: typeof parsed.intent === "string" ? parsed.intent : fallback.intent,
+      main_topic: typeof parsed.main_topic === "string" ? parsed.main_topic : fallback.main_topic,
+      keywords: safeArray(parsed.keywords).slice(0, 8),
+      synonyms: safeArray(parsed.synonyms).slice(0, 8),
+      related_technologies: safeArray(parsed.related_technologies).slice(0, 8),
+      error_terms: safeArray(parsed.error_terms).slice(0, 6),
+      search_queries: safeArray(parsed.search_queries).slice(0, 6),
+    }
+  } catch {
+    return fallback
+  }
 }
 
 function buildContext(products: Product[]): string {
@@ -144,6 +242,25 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   return rows.slice(0, MAX_RESULTS)
 }
 
+function rerankProducts(products: Product[], terms: string[]) {
+  const normalizedTerms = terms.map((t) => t.toLowerCase())
+  return products
+    .map((p) => {
+      const name = p.name.toLowerCase()
+      const desc = (p.short_description ?? "").toLowerCase()
+      const hitCount = normalizedTerms.reduce((acc, term) => {
+        if (name.includes(term)) return acc + 3
+        if (desc.includes(term)) return acc + 1
+        return acc
+      }, 0)
+      const stockScore = p.stock > 0 ? 0.2 : -2
+      return { product: p, score: hitCount + stockScore }
+    })
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r.product)
+}
+
 
 async function logEvent(userId: string, eventType: string, payload: Record<string, unknown>) {
   await supabaseRequest("user_events", {
@@ -167,12 +284,22 @@ export async function POST(req: Request) {
     if (!rawQuery) return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 })
 
     const userId = body.userId ?? "anonymous"
-    const detectedIntent = detectIntent(rawQuery)
+    const refined = await refineQueryWithGroq(rawQuery)
+    const detectedIntent = refined.intent || detectIntent(rawQuery)
+    const retrievalQueries = Array.from(new Set([rawQuery, ...refined.search_queries, refined.main_topic].filter(Boolean)))
 
     let products: Product[] = []
     try {
-      products = await retrieveProducts(rawQuery)
-      logStage("retrieve_ok", { count: products.length, intent: detectedIntent })
+      const candidates = await Promise.all(retrievalQueries.map((q) => retrieveProducts(q)))
+      const merged = Array.from(new Map(candidates.flat().map((p) => [p.id, p])).values())
+      const rankTerms = [
+        ...refined.keywords,
+        ...refined.synonyms,
+        ...refined.related_technologies,
+        ...extractSearchTerms(rawQuery).tokens,
+      ]
+      products = rerankProducts(merged, rankTerms).slice(0, 5)
+      logStage("retrieve_ok", { count: products.length, intent: detectedIntent, queryVariants: retrievalQueries.length })
     } catch (error) {
       logStage("retrieve_exception", { message: error instanceof Error ? error.message : "unknown" })
       return NextResponse.json({ error: "No fue posible consultar productos" }, { status: 502 })
@@ -199,7 +326,7 @@ export async function POST(req: Request) {
             { role: "system", content: SYSTEM_PROMPT },
             {
               role: "user",
-              content: `User query: ${rawQuery}\n\nProduct context:\n${context}\n\nRules: never invent products; only use product IDs from context. Keep it concise and sales-oriented.`,
+              content: `USER_QUERY:\n${rawQuery}\n\nREFINED_QUERY_JSON:\n${JSON.stringify(refined)}\n\nPRODUCT_CONTEXT_START\n${context}\nPRODUCT_CONTEXT_END\n\nRules:\n- Use only PRODUCT_CONTEXT\n- If no good options in context, ask one clarification\n- Mention price in every recommendation\n- Keep concise and practical`,
             },
           ],
         }),
