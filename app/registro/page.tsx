@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
   User,
@@ -13,17 +14,23 @@ import {
   Sparkles,
   Check,
   MapPin,
-  Phone
+  Phone,
+  AlertCircle,
+  Loader
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 
 type UserType = "usuario" | "vendedor" | null
 
 export default function RegistroPage() {
+  const router = useRouter()
   const [userType, setUserType] = useState<UserType>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
   const [formData, setFormData] = useState({
     nombre: "",
     email: "",
@@ -40,6 +47,124 @@ export default function RegistroPage() {
       ...formData,
       [e.target.name]: e.target.value,
     })
+    setError("")
+  }
+
+  const validateForm = () => {
+    if (!formData.nombre.trim()) {
+      setError("El nombre es requerido")
+      return false
+    }
+    if (!formData.email.trim()) {
+      setError("El email es requerido")
+      return false
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      setError("Por favor ingresa un email válido")
+      return false
+    }
+    if (!formData.password) {
+      setError("La contraseña es requerida")
+      return false
+    }
+    if (formData.password.length < 8) {
+      setError("La contraseña debe tener mínimo 8 caracteres")
+      return false
+    }
+    if (formData.password !== formData.confirmPassword) {
+      setError("Las contraseñas no coinciden")
+      return false
+    }
+    if (!formData.telefono.trim()) {
+      setError("El teléfono es requerido")
+      return false
+    }
+    if (!formData.ubicacion.trim()) {
+      setError("La ubicación es requerida")
+      return false
+    }
+    if (userType === "vendedor" && !formData.storeName.trim()) {
+      setError("El nombre de la tienda es requerido")
+      return false
+    }
+    if (!agreed) {
+      setError("Debes aceptar los términos y condiciones")
+      return false
+    }
+    return true
+  }
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+
+    if (!validateForm()) return
+
+    setIsLoading(true)
+    try {
+      // Register user with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+      })
+
+      if (authError) {
+        setError(authError.message)
+        setIsLoading(false)
+        return
+      }
+
+      if (!authData.user) {
+        setError("Error al crear la cuenta")
+        setIsLoading(false)
+        return
+      }
+
+      // Create user profile in database
+      const { error: profileError } = await supabase
+        .from("users")
+        .insert({
+          id: authData.user.id,
+          email: formData.email,
+          nombre: formData.nombre,
+          telefono: formData.telefono,
+          ubicacion: formData.ubicacion,
+          user_type: userType,
+          created_at: new Date().toISOString(),
+        })
+
+      if (profileError) {
+        setError(profileError.message)
+        setIsLoading(false)
+        return
+      }
+
+      // If seller, create store
+      if (userType === "vendedor") {
+        const { error: storeError } = await supabase
+          .from("sellers")
+          .insert({
+            user_id: authData.user.id,
+            store_name: formData.storeName,
+            description: "",
+            is_verified: false,
+            created_at: new Date().toISOString(),
+          })
+
+        if (storeError) {
+          setError(storeError.message)
+          setIsLoading(false)
+          return
+        }
+      }
+
+      // Redirect to login or dashboard
+      router.push("/iniciar-sesion?registered=true")
+    } catch (err) {
+      setError("Error inesperado. Por favor intenta de nuevo")
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -145,8 +270,16 @@ export default function RegistroPage() {
               </div>
             </div>
 
+            {/* Error Message */}
+            {error && (
+              <div className="mb-4 rounded-lg bg-destructive/10 p-4 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-destructive">{error}</p>
+              </div>
+            )}
+
             {/* Form Fields */}
-            <form className="space-y-4">
+            <form className="space-y-4" onSubmit={handleSubmit}>
               {/* Nombre */}
               <div>
                 <label htmlFor="nombre" className="mb-1.5 block text-sm font-medium text-foreground">
@@ -312,10 +445,19 @@ export default function RegistroPage() {
               <Button
                 type="submit"
                 className="w-full rounded-lg bg-primary hover:bg-primary/90 cursor-pointer"
-                disabled={!agreed}
+                disabled={!agreed || isLoading}
               >
-                <Check className="mr-2 h-4 w-4" />
-                Crear cuenta
+                {isLoading ? (
+                  <>
+                    <Loader className="mr-2 h-4 w-4 animate-spin" />
+                    Creando cuenta...
+                  </>
+                ) : (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    Crear cuenta
+                  </>
+                )}
               </Button>
             </form>
 
