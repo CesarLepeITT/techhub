@@ -191,14 +191,35 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
   return fetch(url, { ...init, headers })
 }
 
+function sanitizeSearchQuery(input: string): { normalized: string; tsQuery: string; isLong: boolean } {
+  const MAX_LEN = 280
+  const normalized = input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_LEN)
+
+  const tokens = normalized
+    .toLowerCase()
+    .split(" ")
+    .filter((t) => t.length >= 2 && !STOPWORDS.has(t))
+    .slice(0, 20)
+
+  return {
+    normalized,
+    tsQuery: tokens.join(" "),
+    isLong: normalized.length > 80 || tokens.length >= 8,
+  }
+}
+
 async function retrieveProducts(query: string): Promise<Product[]> {
   const MAX_RESULTS = 5
   const cleanQuery = query.trim()
-  // Importante: PostgREST necesita que los términos con espacios o comas 
-  // dentro de un .or() estén envueltos en " "
-  const quotedQuery = `"${cleanQuery}"` 
-  const encoded = encodeURIComponent(quotedQuery)
+  const sanitized = sanitizeSearchQuery(cleanQuery)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
+  if (!sanitized.tsQuery) return []
 
   // 1) Try full-text search
   // Usamos .wfts. para búsqueda de frases
@@ -235,7 +256,7 @@ async function retrieveProducts(query: string): Promise<Product[]> {
   if (!ilikeRes.ok) {
     const ilikeErrorBody = await ilikeRes.text()
     logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
-    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
+    return []
   }
 
   const rows = (await ilikeRes.json()) as Product[]
