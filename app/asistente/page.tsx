@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Sparkles, Send, ArrowRight, Package, Zap, GraduationCap, Puzzle, RefreshCw } from "lucide-react"
+import { Sparkles, Send, ArrowRight, Package, Zap, GraduationCap, Puzzle, RefreshCw, ImageUp, Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
@@ -69,10 +69,50 @@ export default function AssistantPage() {
   const [isTyping, setIsTyping] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false) // Control de la cámara
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isTyping])
+
+  useEffect(() => {
+    if (isCameraOpen && videoRef.current && cameraStreamRef.current) {
+      videoRef.current.srcObject = cameraStreamRef.current
+    }
+  }, [isCameraOpen])
+
+  useEffect(() => () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+  }, [])
+
+  const closeCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+    cameraStreamRef.current = null
+    setIsCameraOpen(false)
+  }
+
+  const openCamera = async () => {
+    if (isTyping) return
+    setCameraError("")
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Tu navegador no permite abrir la cámara desde esta página. Usa el botón de subir fotografía.")
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      })
+      cameraStreamRef.current = stream
+      setIsCameraOpen(true)
+    } catch {
+      setCameraError("No pude abrir la cámara. Revisa los permisos del navegador o usa el botón de subir fotografía.")
+    }
+  }
 
   const handleSubmit = async (prompt: string) => {
     if (!prompt.trim() || isTyping) return
@@ -106,6 +146,96 @@ export default function AssistantPage() {
     } finally {
       setIsTyping(false)
     }
+  }
+
+  const submitImageDataUrl = async (imageDataUrl: string) => {
+    if (isTyping) return
+
+    setInputValue("")
+    setIsTyping(true)
+
+    try {
+      const prompt = "Buscar productos relacionados con esta fotografía"
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        type: "user",
+        content: prompt,
+        imagePreview: imageDataUrl,
+        timestamp: new Date(),
+      }])
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: prompt, imageDataUrl }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Error desconocido")
+
+      setMessages((prev) => [...prev, {
+        id: (Date.now() + 1).toString(),
+        type: "assistant",
+        content: stripIdsFromAssistantText(data.response ?? ""),
+        products: data.products,
+        timestamp: new Date(),
+      }])
+    } catch {
+      setMessages((prev) => [...prev, {
+        id: (Date.now() + 1).toString(),
+        type: "assistant",
+        content: "No pude analizar la fotografía ahora mismo. Intenta con otra imagen o describe el componente que quieres encontrar.",
+        timestamp: new Date(),
+      }])
+    } finally {
+      setIsTyping(false)
+    }
+  }
+
+  const handleImageFile = async (file: File | undefined) => {
+    if (!file || isTyping) return
+    if (!file.type.startsWith("image/")) {
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        type: "assistant",
+        content: "El archivo seleccionado no parece ser una imagen. Intenta con una fotografía en PNG, JPG o WebP.",
+        timestamp: new Date(),
+      }])
+      return
+    }
+
+    try {
+      await submitImageDataUrl(await readFileAsDataUrl(file))
+    } catch {
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        type: "assistant",
+        content: "No pude leer la imagen seleccionada. Intenta con otra fotografía.",
+        timestamp: new Date(),
+      }])
+    }
+  }
+
+  const capturePhoto = () => {
+    const video = videoRef.current
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError("La cámara aún no está lista. Espera un momento e intenta de nuevo.")
+      return
+    }
+
+    const canvas = document.createElement("canvas")
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const imageDataUrl = canvas.toDataURL("image/jpeg", 0.85)
+    closeCamera()
+    void submitImageDataUrl(imageDataUrl)
+  }
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (file && isCameraOpen) closeCamera()
+    void handleImageFile(file)
   }
 
   return (

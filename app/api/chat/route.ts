@@ -24,6 +24,14 @@ const SYSTEM_PROMPT =
 const QUERY_REWRITE_SYSTEM_PROMPT =
   "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas. La corrección de ortografía es la prioridad; asegúrate de corregir palabras mal escritas. Asegurate de poner tildes."
 
+const QUERY_REWRITE_SYSTEM_PROMPT =
+  "Eres un corrector de consultas de búsqueda para una tienda de tecnología. Corrige ortografía y redacción sin cambiar la intención, conserva términos técnicos, marcas, cantidades y unidades. Responde solo con la consulta corregida, sin explicaciones ni comillas."
+
+const IMAGE_DESCRIPTION_PROMPT =
+  "Describe esta imagen para un buscador de productos tecnológicos y electrónicos. Identifica componentes, módulos, placas, sensores, cables, herramientas, etiquetas visibles, conectores, usos probables y palabras clave de búsqueda. Responde en español con una descripción breve y concreta."
+
+const IMAGE_CONTEXT_SYSTEM_PROMPT =
+  "Eres un analista de contexto para RAG de una tienda de electrónica. Convierte una descripción visual y el texto opcional del usuario en una consulta de búsqueda útil para la base de datos. Incluye nombres de componentes, categorías, usos y sinónimos relevantes. Responde solo con la consulta final, sin explicaciones."
 
 const IMAGE_DESCRIPTION_PROMPT =
   "Describe esta imagen para un buscador de productos tecnológicos y electrónicos. Identifica componentes, módulos, placas, sensores, cables, herramientas, etiquetas visibles, conectores, usos probables y palabras clave de búsqueda. Responde en español con una descripción breve y concreta."
