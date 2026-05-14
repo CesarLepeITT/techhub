@@ -452,9 +452,7 @@ export default function VendedorPage() {
       <aside className="fixed left-0 top-0 z-40 hidden h-screen w-60 border-r border-border/50 bg-card lg:flex flex-col">
         <div className="flex h-16 items-center gap-2 border-b border-border/50 px-5">
           <Link href="/" className="flex items-center gap-2 cursor-pointer">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
-            </div>
+            <Image src="/icon.png" alt="techHub" width={36} height={36} className="h-9 w-9" />
             <span className="text-base font-semibold text-foreground">techHub</span>
           </Link>
         </div>
