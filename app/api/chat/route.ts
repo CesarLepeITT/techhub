@@ -16,9 +16,7 @@ const env = {
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
-  xaiApiKey: process.env.XAI_API_KEY ?? process.env.GROK_API_KEY ?? "",
-  xaiBaseUrl: process.env.XAI_BASE_URL ?? "https://api.x.ai/v1",
-  xaiModel: process.env.XAI_MODEL ?? "grok-3-mini",
+  openAiKey: process.env.OPENAI_API_KEY ?? process.env.OPEN_API_KEY ?? "",
 }
 
 function detectIntent(query: string): string {
@@ -47,7 +45,7 @@ function validateRequiredEnv() {
   if (!env.supabaseUrl) missing.push("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
   if (!env.supabaseServiceRoleKey)
     missing.push("SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY fallback)")
-  if (!env.xaiApiKey) missing.push("XAI_API_KEY (or GROK_API_KEY)")
+  if (!env.openAiKey) missing.push("OPENAI_API_KEY (or OPEN_API_KEY)")
   return missing
 }
 
@@ -64,10 +62,14 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
 
 async function retrieveProducts(query: string): Promise<Product[]> {
   const cleanQuery = query.trim()
-  const encoded = encodeURIComponent(cleanQuery)
+  // Importante: PostgREST necesita que los términos con espacios o comas 
+  // dentro de un .or() estén envueltos en " "
+  const quotedQuery = `"${cleanQuery}"` 
+  const encoded = encodeURIComponent(quotedQuery)
   const select = "id,name,short_description,retail_price,stock,main_image_url"
 
-  // 1) Try full-text search first (websearch syntax is more tolerant for natural phrases).
+  // 1) Try full-text search
+  // Usamos .wfts. para búsqueda de frases
   const ftsPath = `products?select=${select}&or=(name.wfts.${encoded},short_description.wfts.${encoded},tags.wfts.${encoded})&limit=5`
   const ftsRes = await supabaseRequest(ftsPath)
 
@@ -75,6 +77,25 @@ async function retrieveProducts(query: string): Promise<Product[]> {
     const rows = (await ftsRes.json()) as Product[]
     return rows.slice(0, 5)
   }
+
+  const ftsErrorBody = await ftsRes.text()
+  logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
+
+  // 2) Fallback: ILIKE
+  // Para ILIKE, no usamos comillas, pero escapamos la query de forma más conservadora
+  const simpleEncoded = encodeURIComponent(`%${cleanQuery.replace(/,/g, '')}%`)
+  const ilikePath = `products?select=${select}&or=(name.ilike.${simpleEncoded},short_description.ilike.${simpleEncoded},tags.ilike.${simpleEncoded})&limit=5`
+  const ilikeRes = await supabaseRequest(ilikePath)
+
+  if (!ilikeRes.ok) {
+    const ilikeErrorBody = await ilikeRes.text()
+    logStage("retrieve_ilike_failed", { status: ilikeRes.status, body: ilikeErrorBody.slice(0, 250) })
+    throw new Error(`Supabase retrieve failed (fts=${ftsRes.status}, ilike=${ilikeRes.status})`)
+  }
+
+  const rows = (await ilikeRes.json()) as Product[]
+  return rows.slice(0, 5)
+}
 
   const ftsErrorBody = await ftsRes.text()
   logStage("retrieve_fts_failed", { status: ftsRes.status, body: ftsErrorBody.slice(0, 250) })
@@ -134,14 +155,14 @@ export async function POST(req: Request) {
       explanation =
         "No encontré productos exactos todavía. ¿Cuál es tu presupuesto, uso principal, categoría preferida y tipo de proyecto?"
     } else {
-      const aiRes = await fetch(`${env.xaiBaseUrl}/chat/completions`, {
+      const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.xaiApiKey}`,
+          Authorization: `Bearer ${env.openAiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: env.xaiModel,
+          model: "gpt-4o-mini",
           temperature: 0.2,
           max_tokens: 220,
           messages: [
@@ -156,8 +177,8 @@ export async function POST(req: Request) {
 
       if (!aiRes.ok) {
         const responseText = await aiRes.text()
-        logStage("xai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
-        return NextResponse.json({ error: "No fue posible generar respuesta con Grok" }, { status: 502 })
+        logStage("openai_failed", { status: aiRes.status, body: responseText.slice(0, 250) })
+        return NextResponse.json({ error: "No fue posible generar respuesta de IA" }, { status: 502 })
       }
 
       const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
