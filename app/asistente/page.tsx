@@ -145,8 +145,7 @@ export default function AssistantPage() {
   const [cameraError, setCameraError] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const cameraStreamRef = useRef<MediaStream | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -220,13 +219,23 @@ export default function AssistantPage() {
     }
   }
 
-  const submitImageDataUrl = async (imageDataUrl: string) => {
-    if (isTyping) return
+  const handleImageFile = async (file: File | undefined) => {
+    if (!file || isTyping) return
+    if (!file.type.startsWith("image/")) {
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        type: "assistant",
+        content: "El archivo seleccionado no parece ser una imagen. Intenta con una fotografía en PNG, JPG o WebP.",
+        timestamp: new Date(),
+      }])
+      return
+    }
 
     setInputValue("")
     setIsTyping(true)
 
     try {
+      const imageDataUrl = await readFileAsDataUrl(file)
       const prompt = "Buscar productos relacionados con esta fotografía"
       setMessages((prev) => [...prev, {
         id: Date.now().toString(),
@@ -263,46 +272,6 @@ export default function AssistantPage() {
     }
   }
 
-  const handleImageFile = async (file: File | undefined) => {
-    if (!file || isTyping) return
-    if (!file.type.startsWith("image/")) {
-      setMessages((prev) => [...prev, {
-        id: Date.now().toString(),
-        type: "assistant",
-        content: "El archivo seleccionado no parece ser una imagen. Intenta con una fotografía en PNG, JPG o WebP.",
-        timestamp: new Date(),
-      }])
-      return
-    }
-
-    try {
-      await submitImageDataUrl(await readFileAsDataUrl(file))
-    } catch {
-      setMessages((prev) => [...prev, {
-        id: Date.now().toString(),
-        type: "assistant",
-        content: "No pude leer la imagen seleccionada. Intenta con otra fotografía.",
-        timestamp: new Date(),
-      }])
-    }
-  }
-
-  const capturePhoto = () => {
-    const video = videoRef.current
-    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
-      setCameraError("La cámara aún no está lista. Espera un momento e intenta de nuevo.")
-      return
-    }
-
-    const canvas = document.createElement("canvas")
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const imageDataUrl = canvas.toDataURL("image/jpeg", 0.85)
-    closeCamera()
-    void submitImageDataUrl(imageDataUrl)
-  }
-
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ""
@@ -315,22 +284,7 @@ export default function AssistantPage() {
       <main className="flex flex-1 flex-col pb-8 pt-20 md:pt-24">
         <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 sm:px-6">
           <input ref={uploadInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileInputChange} />
-          {cameraError && <p className="mb-3 rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">{cameraError}</p>}
-          {isCameraOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-lg rounded-xl bg-card p-4 shadow-soft">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold text-foreground">Tomar fotografía</h2>
-                  <Button type="button" variant="ghost" onClick={closeCamera}>Cerrar</Button>
-                </div>
-                <video ref={videoRef} autoPlay playsInline muted className="max-h-[70vh] w-full rounded-lg bg-black object-contain" />
-                <div className="mt-4 flex justify-end gap-3">
-                  <Button type="button" variant="outline" onClick={closeCamera}>Cancelar</Button>
-                  <Button type="button" onClick={capturePhoto}>Usar foto</Button>
-                </div>
-              </div>
-            </div>
-          )}
+          <input ref={cameraInputRef} type="file" accept="image/png,image/jpeg,image/webp" capture="environment" className="hidden" onChange={handleFileInputChange} />
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center py-12">
               <div className="mb-8 text-center">
@@ -346,7 +300,7 @@ export default function AssistantPage() {
                   onInputChange={setInputValue}
                   onSubmit={() => handleSubmit(inputValue)}
                   onUploadClick={() => uploadInputRef.current?.click()}
-                  onCameraClick={openCamera}
+                  onCameraClick={() => cameraInputRef.current?.click()}
                 />
               </div>
               <div className="w-full max-w-2xl"><p className="mb-4 text-center text-sm font-medium text-muted-foreground">Prueba con estos ejemplos</p><div className="grid gap-3 sm:grid-cols-2">{suggestedPrompts.map((prompt, index) => <button key={index} className="group flex items-center gap-3 rounded-lg bg-card p-4 text-left shadow-soft transition-lift" onClick={() => handleSubmit(prompt.text)}><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground"><prompt.icon className="h-5 w-5" /></div><span className="text-sm text-foreground">{prompt.text}</span><ArrowRight className="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" /></button>)}</div></div>
@@ -361,7 +315,7 @@ export default function AssistantPage() {
                   onInputChange={setInputValue}
                   onSubmit={() => handleSubmit(inputValue)}
                   onUploadClick={() => uploadInputRef.current?.click()}
-                  onCameraClick={openCamera}
+                  onCameraClick={() => cameraInputRef.current?.click()}
                 />
               </div>
             </div>
