@@ -228,6 +228,7 @@ Si recomiendas varios, incluye cada ID exacto en el texto.`,
       } else {
         const aiJson = (await aiRes.json()) as { choices?: Array<{ message?: { content?: string } }> }
         explanation = aiJson.choices?.[0]?.message?.content?.trim() ?? ""
+        logStage("groq_raw_output", { aiOutput: explanation })
         if (!explanation) explanation = `Recomiendo estos ${products.length} producto(s) para tu proyecto.`
         selectedProductIds = extractRecommendedIdsFromText(explanation, products)
 
