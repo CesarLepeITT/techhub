@@ -14,7 +14,10 @@
       "Bash(Select-Object FullName)",
       "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\Latitude 7390\\\\desktop\\\\TechHub\\\\app\\\\buscar-imagen\")",
       "mcp__claude_ai_Supabase__list_projects",
-      "mcp__claude_ai_Supabase__execute_sql"
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(New-Item -ItemType Directory -Force -Path \"C:\\\\Users\\\\Latitude 7390\\\\desktop\\\\TechHub\\\\app\\\\lista\\\\[token]\")",
+      "Bash(Out-Null)",
+      "Bash(Write-Output \"Created\")"
     ]
   }
 }

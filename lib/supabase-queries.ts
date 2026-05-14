@@ -1134,3 +1134,138 @@ export async function getProductsForReels(ids: string[]) {
     error,
   }
 }
+
+// ── Shared Lists ──────────────────────────────────────────────────────────────
+
+export async function createSharedList(userId: string, name: string) {
+  const { data, error } = await supabase
+    .from("shared_lists")
+    .insert({ user_id: userId, name })
+    .select("id, name, is_shared, share_token, created_at")
+    .single()
+  return { data, error }
+}
+
+export async function getUserSharedLists(userId: string) {
+  const { data, error } = await supabase
+    .from("shared_lists")
+    .select("id, name, is_shared, share_token, created_at, shared_list_items(id)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+
+  return {
+    data:
+      data?.map((list) => ({
+        id: list.id,
+        name: list.name,
+        is_shared: list.is_shared,
+        share_token: list.share_token as string,
+        created_at: list.created_at,
+        item_count: Array.isArray(list.shared_list_items) ? list.shared_list_items.length : 0,
+      })) ?? [],
+    error,
+  }
+}
+
+export async function getSharedListByToken(token: string) {
+  const { data, error } = await supabase
+    .from("shared_lists")
+    .select(
+      `
+      id,
+      name,
+      is_shared,
+      share_token,
+      user_id,
+      users(full_name, username),
+      shared_list_items(
+        id,
+        product_id,
+        products(id, name, image_url, main_image_url, retail_price, stock)
+      )
+      `
+    )
+    .eq("share_token", token)
+    .single()
+
+  if (error || !data) return { data: null, error }
+
+  type RawItem = {
+    id: string
+    product_id: string
+    products: {
+      id: string
+      name: string
+      image_url: string | null
+      main_image_url: string | null
+      retail_price: number | string
+      stock: number
+    } | null
+  }
+
+  const items = (data.shared_list_items as unknown as RawItem[]) ?? []
+  const creator = data.users as { full_name?: string | null; username?: string | null } | null
+
+  return {
+    data: {
+      id: data.id,
+      name: data.name,
+      is_shared: data.is_shared,
+      share_token: data.share_token as string,
+      user_id: data.user_id,
+      creator_name: creator?.full_name || creator?.username || "Usuario",
+      items: items
+        .filter((item) => item.products)
+        .map((item) => ({
+          item_id: item.id,
+          product_id: item.product_id,
+          name: item.products!.name,
+          image_url:
+            item.products!.image_url ||
+            item.products!.main_image_url ||
+            "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=400&fit=crop",
+          price: toNumber(item.products!.retail_price),
+          stock: item.products!.stock,
+        })),
+    },
+    error: null,
+  }
+}
+
+export async function addProductToSharedList(listId: string, productId: string) {
+  const { data, error } = await supabase
+    .from("shared_list_items")
+    .upsert({ list_id: listId, product_id: productId }, { onConflict: "list_id,product_id" })
+    .select()
+  return { data, error }
+}
+
+export async function removeProductFromSharedList(listId: string, productId: string) {
+  const { error } = await supabase
+    .from("shared_list_items")
+    .delete()
+    .eq("list_id", listId)
+    .eq("product_id", productId)
+  return { error }
+}
+
+export async function updateSharedList(
+  listId: string,
+  updates: { name?: string; is_shared?: boolean }
+) {
+  const { data, error } = await supabase
+    .from("shared_lists")
+    .update(updates)
+    .eq("id", listId)
+    .select("id, name, is_shared, share_token")
+    .single()
+  return { data, error }
+}
+
+export async function deleteSharedList(listId: string) {
+  const { error } = await supabase
+    .from("shared_lists")
+    .delete()
+    .eq("id", listId)
+  return { error }
+}

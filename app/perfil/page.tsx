@@ -26,11 +26,28 @@ import {
   ShoppingCart,
   Minus,
   Plus,
+  ListChecks,
+  Link2,
+  Lock,
+  Globe,
+  Plus as PlusIcon,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
-import { getUserOrders, getCart, removeFromCart, updateCartQuantity, getWishlist, removeFromWishlist } from "@/lib/supabase-queries"
+import {
+  getUserOrders,
+  getCart,
+  removeFromCart,
+  updateCartQuantity,
+  getWishlist,
+  removeFromWishlist,
+  getUserSharedLists,
+  createSharedList,
+  updateSharedList,
+  deleteSharedList,
+} from "@/lib/supabase-queries"
 import { useSession } from "@/components/SessionProvider"
 
 type Order = {
@@ -58,7 +75,15 @@ type WishlistItem = {
   products: { id: string; name: string; image_url: string; price: number }
 }
 
-type TabType = "overview" | "orders" | "settings" | "carrito" | "wishlist"
+type TabType = "overview" | "orders" | "settings" | "carrito" | "wishlist" | "listas"
+
+type SharedList = {
+  id: string
+  name: string
+  is_shared: boolean
+  share_token: string
+  item_count: number
+}
 
 export default function PerfilPage() {
   const router = useRouter()
@@ -71,6 +96,12 @@ export default function PerfilPage() {
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([])
   const [isLoadingCart, setIsLoadingCart] = useState(false)
   const [isLoadingWishlist, setIsLoadingWishlist] = useState(false)
+  const [lists, setLists] = useState<SharedList[]>([])
+  const [isLoadingLists, setIsLoadingLists] = useState(false)
+  const [newListName, setNewListName] = useState("")
+  const [showNewList, setShowNewList] = useState(false)
+  const [isCreatingList, setIsCreatingList] = useState(false)
+  const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [userData, setUserData] = useState({
     nombre: "",
     email: "",
@@ -146,6 +177,46 @@ export default function PerfilPage() {
     } finally {
       setIsLoadingWishlist(false)
     }
+  }
+
+  const loadLists = async () => {
+    if (!user) return
+    setIsLoadingLists(true)
+    const res = await getUserSharedLists(user.id)
+    setLists((res.data ?? []) as SharedList[])
+    setIsLoadingLists(false)
+  }
+
+  const handleCreateList = async () => {
+    if (!user || !newListName.trim()) return
+    setIsCreatingList(true)
+    const { data } = await createSharedList(user.id, newListName.trim())
+    if (data) {
+      setLists((prev) => [{ id: data.id, name: data.name, is_shared: data.is_shared, share_token: data.share_token, item_count: 0 }, ...prev])
+      setNewListName("")
+      setShowNewList(false)
+    }
+    setIsCreatingList(false)
+  }
+
+  const handleToggleShare = async (list: SharedList) => {
+    const { data } = await updateSharedList(list.id, { is_shared: !list.is_shared })
+    if (data) {
+      setLists((prev) => prev.map((l) => l.id === list.id ? { ...l, is_shared: !l.is_shared } : l))
+    }
+  }
+
+  const handleDeleteList = async (listId: string) => {
+    await deleteSharedList(listId)
+    setLists((prev) => prev.filter((l) => l.id !== listId))
+  }
+
+  const SHARE_BASE_URL = "https://crafter-professed-cannon.ngrok-free.dev"
+
+  const handleCopyListLink = (token: string) => {
+    navigator.clipboard.writeText(`${SHARE_BASE_URL}/lista/${token}`)
+    setCopiedToken(token)
+    setTimeout(() => setCopiedToken(null), 2000)
   }
 
   const handleRemoveFromCart = async (cartId: string) => {
@@ -321,6 +392,16 @@ export default function PerfilPage() {
               }`}
             >
               Órdenes
+            </button>
+            <button
+              onClick={() => { setActiveTab("listas"); if (lists.length === 0) void loadLists() }}
+              className={`pb-4 text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === "listas"
+                  ? "border-b-2 border-primary text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Mis listas
             </button>
             <button
               onClick={() => setActiveTab("settings")}
@@ -688,6 +769,153 @@ export default function PerfilPage() {
                 </Button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Listas Tab */}
+        {activeTab === "listas" && (
+          <div className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Mis listas</h2>
+                <p className="text-sm text-muted-foreground">{lists.length} lista{lists.length !== 1 ? "s" : ""}</p>
+              </div>
+              <Button
+                size="sm"
+                className="rounded-xl bg-primary hover:bg-primary/90 cursor-pointer"
+                onClick={() => setShowNewList(true)}
+              >
+                <PlusIcon className="mr-1.5 h-4 w-4" />
+                Nueva lista
+              </Button>
+            </div>
+
+            {/* Create list form */}
+            {showNewList && (
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-4 shadow-soft">
+                <input
+                  type="text"
+                  placeholder="Nombre de la lista..."
+                  value={newListName}
+                  onChange={(e) => setNewListName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void handleCreateList() }}
+                  autoFocus
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <Button size="sm" className="rounded-lg bg-primary hover:bg-primary/90 cursor-pointer" onClick={() => void handleCreateList()} disabled={!newListName.trim() || isCreatingList}>
+                  {isCreatingList ? <Loader className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                </Button>
+                <button onClick={() => { setShowNewList(false); setNewListName("") }} className="rounded-lg p-2 text-muted-foreground hover:bg-secondary cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Lists */}
+            {isLoadingLists ? (
+              <div className="flex justify-center py-12">
+                <Loader className="h-7 w-7 animate-spin text-primary" />
+              </div>
+            ) : lists.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center">
+                <ListChecks className="mx-auto mb-3 h-12 w-12 text-muted-foreground" />
+                <p className="font-medium text-foreground">Sin listas</p>
+                <p className="mt-1 text-sm text-muted-foreground">Crea tu primera lista para guardar y compartir productos.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {lists.map((list) => (
+                  <div key={list.id} className="rounded-xl border border-border bg-card p-4 shadow-soft">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                        <ListChecks className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-foreground">{list.name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {list.item_count} producto{list.item_count !== 1 ? "s" : ""}
+                        </p>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          {list.is_shared ? (
+                            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <Globe className="h-2.5 w-2.5" />
+                              Compartida
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              <Lock className="h-2.5 w-2.5" />
+                              Privada
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {/* Toggle share */}
+                        <button
+                          onClick={() => void handleToggleShare(list)}
+                          title={list.is_shared ? "Hacer privada" : "Compartir"}
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
+                        >
+                          {list.is_shared ? <Lock className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+                        </button>
+
+                        {/* Copy link (only if shared) */}
+                        {list.is_shared && (
+                          <button
+                            onClick={() => handleCopyListLink(list.share_token)}
+                            title="Copiar enlace"
+                            className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-primary transition-colors cursor-pointer"
+                          >
+                            {copiedToken === list.share_token ? (
+                              <Check className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Link2 className="h-4 w-4" />
+                            )}
+                          </button>
+                        )}
+
+                        {/* Open list */}
+                        <a
+                          href={`/lista/${list.share_token}`}
+                          title="Abrir lista"
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </a>
+
+                        {/* Delete */}
+                        <button
+                          onClick={() => void handleDeleteList(list.id)}
+                          title="Eliminar lista"
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Shared link preview */}
+                    {list.is_shared && (
+                      <div className="mt-3 flex items-center gap-2 rounded-lg bg-secondary/50 px-3 py-2">
+                        <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <p className="truncate text-xs text-muted-foreground">
+                          {SHARE_BASE_URL}/lista/{list.share_token}
+                        </p>
+                        <button
+                          onClick={() => handleCopyListLink(list.share_token)}
+                          className="ml-auto shrink-0 text-xs font-medium text-primary hover:underline cursor-pointer"
+                        >
+                          {copiedToken === list.share_token ? "Copiado" : "Copiar"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>
