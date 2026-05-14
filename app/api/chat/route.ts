@@ -31,6 +31,12 @@ function sanitizeSearchQuery(input: string): string {
     .slice(0, MAX_SEARCH_QUERY_LENGTH)
 }
 
+const FALLBACK_STOP_WORDS = new Set([
+  "con", "para", "de", "del", "la", "las", "el", "los", "un", "una", 
+  "unos", "unas", "y", "o", "en", "por", "que", "qué", "sobre", "imagen", 
+  "adjunta", "descripcion", "similar", "quiero", "algo", "estos", "estás"
+]);
+
 function tokenizeForIlikeFallback(input: string): string[] {
   return [
     ...new Set(
@@ -42,7 +48,6 @@ function tokenizeForIlikeFallback(input: string): string[] {
     ),
   ].slice(0, 5)
 }
-
 const env = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   supabaseServiceRoleKey:
